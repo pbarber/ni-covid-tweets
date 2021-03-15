@@ -4,6 +4,8 @@ import re
 
 import requests
 from bs4 import BeautifulSoup
+import boto3
+import botocore
 
 def check_for_files(previous):
     today = datetime.datetime.today()
@@ -54,12 +56,32 @@ def lambda_handler(event, context):
         Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
     """
 
-    excels = check_for_files([])
+    s3 = boto3.client('s3')
+
+    # Get the previous data file list from S3
+    keyname = 'scraper_data.json'
+    bucketname = 'ni-covid-tweets'
+    try:
+        dataobj = s3.get_object(Bucket=bucketname,Key=keyname)
+        previous = json.load(dataobj['Body'])
+    except s3.exceptions.NoSuchKey:
+        print("The object %s does not exist in bucket %s." %(keyname, bucketname))
+        previous = []
+
+    # Check the DoH site for file changes
+    current = check_for_files(previous)
+
+    # Write any changes back to S3
+    if (len(current) > 0) and (previous != current):
+        s3.put_object(Bucket=bucketname, Key=keyname, Body=json.dumps(current))
+        message = 'Wrote %d items to %s' %(len(current), keyname)
+    else:
+        message = 'Did nothing'
 
     return {
         "statusCode": 200,
         "body": json.dumps({
-            "message": "returned %d items" %len(excels),
+            "message:": message,
         }),
     }
 
