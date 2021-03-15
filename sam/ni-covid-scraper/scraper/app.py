@@ -5,19 +5,9 @@ import re
 import requests
 from bs4 import BeautifulSoup
 import boto3
-import botocore
 
-def check_for_files(previous):
-    today = datetime.datetime.today()
-    url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(today.strftime("%B").lower(),today.year)
-    resp = requests.get(url)
-    if resp.status_code == 404:
-        print('Failed to get latest month from %s, rolling back to previous month' %url)
-        last_month = today.replace(day=1) - datetime.timedelta(days=1)
-        url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(last_month.strftime("%B").lower(),last_month.year)
-        resp = requests.get(url)
-    resp.raise_for_status()
-    html = BeautifulSoup(resp.text,features="html.parser")
+def extract_excel_list(text):
+    html = BeautifulSoup(text,features="html.parser")
     excels = []
     regex = re.compile('-(\d{6}).*\.xlsx$')
     for nigovfile in html.find_all("div", {"class": "nigovfile"}):
@@ -29,6 +19,36 @@ def check_for_files(previous):
                 filedate = datetime.datetime.strptime(m.group(1),'%d%m%y')
                 modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
                 excels.append({'url': a['href'],'modified': modified.isoformat(), 'length': int(resp.headers['Content-Length']), 'filedate': filedate.date().isoformat()})
+    return excels
+
+def check_for_files(s3client, bucket, previous):
+    # Attempt to pull this month's list of daily data publications
+    today = datetime.datetime.today()
+    url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(today.strftime("%B").lower(),today.year)
+    resp = requests.get(url)
+    if resp.status_code == 404:
+        print('Failed to get latest month from %s, rolling back to previous month' %url)
+        excels = []
+    else:
+        excels = extract_excel_list(resp.text)
+    # Pull last month's as well, if we need to, to ensure we always have 20 days of data checked
+    if len(excels) < 20:
+        last_month = today.replace(day=1) - datetime.timedelta(days=1)
+        url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(last_month.strftime("%B").lower(),last_month.year)
+        resp = requests.get(url)
+        resp.raise_for_status()
+        excels.extend(extract_excel_list(resp.text))
+    # Work through the list checking against the previous data list
+    for e in excels:
+        match = next((p for p in previous if p["filedate"] == e["filedate"]), None)
+        if (match is None) or ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
+            # Store the new or updated file in S3
+            resp = requests.get(e['url'])
+            resp.raise_for_status()
+            keyname = "DoH-DD/%s/%s-%s.xlsx" %(e['filedate'],e['modified'].replace(':','_'),e['length'])
+            s3client.put_object(Bucket=bucket, Key=keyname, Body=resp.content)
+            e['keyname'] = keyname
+    # Create the new list
     for p in previous:
         if (p not in excels) and (p['filedate'] not in [e['filedate'] for e in excels]):
             excels.insert(0,p)
@@ -69,7 +89,7 @@ def lambda_handler(event, context):
         previous = []
 
     # Check the DoH site for file changes
-    current = check_for_files(previous)
+    current = check_for_files(s3, bucketname, previous)
 
     # Write any changes back to S3
     if (len(current) > 0) and (previous != current):
@@ -84,18 +104,3 @@ def lambda_handler(event, context):
             "message:": message,
         }),
     }
-
-if __name__ == '__main__':
-    import argparse
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-i", "--infile")
-    parser.add_argument("-o", "--outfile", default='out.json')
-    args = parser.parse_args()
-
-    if args.infile:
-        with open(args.infile) as previous:
-            current = check_for_files(json.load(previous))
-    else:
-        current = check_for_files([])
-    with open(args.outfile, 'w') as output:
-        json.dump(current, output)
