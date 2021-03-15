@@ -6,6 +6,10 @@ import requests
 from bs4 import BeautifulSoup
 import boto3
 
+keyname = 'scraper_data.json'
+bucketname = 'ni-covid-tweets'
+files_to_check = 5
+
 def extract_excel_list(text):
     html = BeautifulSoup(text,features="html.parser")
     excels = []
@@ -31,14 +35,17 @@ def check_for_files(s3client, bucket, previous):
         excels = []
     else:
         excels = extract_excel_list(resp.text)
-    # Pull last month's as well, if we need to, to ensure we always have 20 days of data checked
-    if len(excels) < 20:
+    # Pull last month's as well, if we need to, to ensure we always have N days of data checked
+    if len(excels) <= files_to_check:
         last_month = today.replace(day=1) - datetime.timedelta(days=1)
         url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(last_month.strftime("%B").lower(),last_month.year)
         resp = requests.get(url)
         resp.raise_for_status()
         excels.extend(extract_excel_list(resp.text))
+    excels = sorted(excels, key=lambda k: k['filedate'], reverse=True)
+    excels = excels[:files_to_check]
     # Work through the list checking against the previous data list
+    changes = 0
     for e in excels:
         match = next((p for p in previous if p["filedate"] == e["filedate"]), None)
         if (match is None) or ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
@@ -48,11 +55,12 @@ def check_for_files(s3client, bucket, previous):
             keyname = "DoH-DD/%s/%s-%s.xlsx" %(e['filedate'],e['modified'].replace(':','_'),e['length'])
             s3client.put_object(Bucket=bucket, Key=keyname, Body=resp.content)
             e['keyname'] = keyname
+            changes += 1
     # Create the new list
     for p in previous:
         if (p not in excels) and (p['filedate'] not in [e['filedate'] for e in excels]):
             excels.insert(0,p)
-    return excels
+    return excels, changes
 
 def lambda_handler(event, context):
     """Sample pure Lambda function
@@ -79,8 +87,6 @@ def lambda_handler(event, context):
     s3 = boto3.client('s3')
 
     # Get the previous data file list from S3
-    keyname = 'scraper_data.json'
-    bucketname = 'ni-covid-tweets'
     try:
         dataobj = s3.get_object(Bucket=bucketname,Key=keyname)
         previous = json.load(dataobj['Body'])
@@ -89,12 +95,12 @@ def lambda_handler(event, context):
         previous = []
 
     # Check the DoH site for file changes
-    current = check_for_files(s3, bucketname, previous)
+    current, changes = check_for_files(s3, bucketname, previous)
 
     # Write any changes back to S3
-    if (len(current) > 0) and (previous != current):
+    if changes > 0:
         s3.put_object(Bucket=bucketname, Key=keyname, Body=json.dumps(current))
-        message = 'Wrote %d items to %s' %(len(current), keyname)
+        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), keyname, changes)
     else:
         message = 'Did nothing'
 
