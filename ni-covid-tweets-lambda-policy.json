@@ -17,6 +17,15 @@
                 "s3:PutObject"
             ],
             "Resource": "arn:aws:s3:::ni-covid-tweets/*"
+        },
+        {
+            "Effect": "Allow",
+            "Action": [
+                "secretsmanager:GetSecretValue"
+            ],
+            "Resource": [
+                "arn:aws:secretsmanager:eu-west-2:018530147132:secret:ni-covid-tweets-Lx0AG0"
+            ]
         }
     ]
-} 
+}
