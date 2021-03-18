@@ -105,9 +105,10 @@ def lambda_handler(event, context):
         # Find the most recent date and make sure that its file has changed, if it has then tweet
         current = sorted(current, key=lambda k: k['filedate'], reverse=True)
         if not donotlaunch and (current[0]['filedate'] in [c['filedate'] for c in changes]):
+            print('Launching tweeter')
             lambda_client = boto3.client('lambda')
             lambda_client.invoke(
-                FunctionName='NICOVIDTweeter',
+                FunctionName='ni-covid-tweets-NICOVIDTweeter-7GUXQLKTJDEK',
                 InvocationType='Event',
                 Payload=json.dumps(current)
             )
