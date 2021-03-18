@@ -7,7 +7,20 @@ import tweepy
 
 from shared import S3_scraper_index
 
-donottweet = False
+good_symb = '\u2193'
+bad_symb = '\u2191'
+
+def find_previous(df, newest, colname):
+    # Find the date since which the rate was as high/low
+    gte = df.iloc[df[(df[colname] >= newest[colname]) & (df['Sample_Date'] < newest['Sample_Date'])]['Sample_Date'].idxmax()]
+    lt = df.iloc[df[(df[colname] < newest[colname]) & (df['Sample_Date'] < newest['Sample_Date'])]['Sample_Date'].idxmax()]
+    if gte['Sample_Date'] < lt['Sample_Date']:
+        est = bad_symb + ' highest'
+        prev = gte['printdate']
+    else:
+        est = good_symb + ' lowest'
+        prev = lt['printdate']
+    return est, prev
 
 def lambda_handler(event, context):
     """Sample pure Lambda function
@@ -44,39 +57,33 @@ def lambda_handler(event, context):
     # Download the most recently updated Excel file
     changes = sorted(event, key=lambda k: k['filedate'], reverse=True)
     obj = s3.get_object(Bucket=secret['bucketname'],Key=changes[0]['keyname'])['Body']
+    stream = io.BytesIO(obj.read())
 
-    df = pandas.read_excel(io.BytesIO(obj.read()),engine='openpyxl', sheet_name='Summary Tests')
+    # Load test data and add extra fields
+    df = pandas.read_excel(stream,engine='openpyxl',sheet_name='Summary Tests')
     df['pos_rate'] = df['INDIVIDUALS TESTED POSITIVE']/df['ALL INDIVIDUALS TESTED']
     df['rolling_pos_rate'] = df['ROLLING 7 DAY POSITIVE TESTS']/df['ROLLING 7 DAY INDIVIDUALS TESTED']
-    df['printdate']=df['Sample_Date'].dt.strftime('%A %-d %B %Y')
-    latest = df.iloc[df['Sample_Date'].idxmax()]
-    earlier = df[df['Sample_Date'] < latest['Sample_Date']]
-    earlier['gte'] = earlier['pos_rate'] >= latest['pos_rate']
-    earlier['lte'] = earlier['pos_rate'] <= latest['pos_rate']
-    if earlier.iloc[earlier['Sample_Date'].idxmax()]['gte'] == True:
-        est = '\u2193 lowest'
-        prev = earlier.iloc[earlier[earlier['lte'] == True]['Sample_Date'].idxmax()]['printdate']
-    else:
-        est = '\u2191 highest'
-        prev = earlier.iloc[earlier[earlier['gte'] == True]['Sample_Date'].idxmax()]['printdate']
-    latest_7d = df.iloc[df[df['rolling_pos_rate'].notna()]['Sample_Date'].idxmax()]
-    earlier_7d = df[df['Sample_Date'] < latest_7d['Sample_Date']]
-    earlier_7d['gte_7d'] = earlier_7d['rolling_pos_rate'] >= latest_7d['rolling_pos_rate']
-    earlier_7d['lte_7d'] = earlier_7d['rolling_pos_rate'] <= latest_7d['rolling_pos_rate']
-    if earlier_7d.iloc[earlier_7d['Sample_Date'].idxmax()]['gte_7d'] == True:
-        est_7d = '\u2193 lowest'
-        prev_7d = earlier_7d.iloc[earlier_7d[earlier_7d['lte_7d'] == True]['Sample_Date'].idxmax()]['printdate']
-    else:
-        est_7d = '\u2191 highest'
-        prev_7d = earlier_7d.iloc[earlier_7d[earlier_7d['gte_7d'] == True]['Sample_Date'].idxmax()]['printdate']
-    tweet = '''{date}
+    df['printdate']=df['Sample_Date'].dt.strftime('%-d %B %Y')
+    df['rolling_7d_change'] = (df['ROLLING 7 DAY POSITIVE TESTS'] - df['ROLLING 7 DAY POSITIVE TESTS'].shift(7)) * 7
 
-{ind_positive:,} people tested positive, {ind_tested:,} people tested, {pos_rate:.2%} positivity rate
+    # Get the latest dates with values for tests and rolling
+    latest = df.iloc[df['Sample_Date'].idxmax()]
+    latest_7d = df.iloc[df[df['rolling_pos_rate'].notna()]['Sample_Date'].idxmax()]
+
+    # Find the date since which the rate was as high/low
+    est, prev = find_previous(df, latest, 'pos_rate')
+    est_7d, prev_7d = find_previous(df, latest_7d, 'rolling_pos_rate')
+
+    tweet = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive on {date}
 {est} rate since {prev}
 
 {pos_rate_7d:.2%} 7-day positivity rate
-{est_7d} 7-day rate since {prev_7d}'''.format(
-    date=latest['printdate'],
+{est_7d} since {prev_7d}
+
+{pos_7d:,} positive in last 7 days
+{tag_7d} {dif_7d:,} {dir_7d} than preceding 7 days ({pct_7d:.2%})
+'''.format(
+    date=latest['Sample_Date'].strftime('%A %-d %B %Y'),
     ind_positive=latest['INDIVIDUALS TESTED POSITIVE'],
     ind_tested=latest['ALL INDIVIDUALS TESTED'],
     pos_rate=latest['pos_rate'],
@@ -84,7 +91,12 @@ def lambda_handler(event, context):
     est=est,
     prev=prev,
     est_7d=est_7d,
-    prev_7d=prev_7d)
+    prev_7d=prev_7d,
+    pos_7d=int(round(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7,0)),
+    tag_7d=good_symb if int(round(latest_7d['rolling_7d_change'],0))<0 else bad_symb,
+    dir_7d='fewer' if int(round(latest_7d['rolling_7d_change'],0))<0 else 'more',
+    dif_7d=int(abs(round(latest_7d['rolling_7d_change'],0))),
+    pct_7d=latest_7d['rolling_7d_change']/(latest_7d['rolling_7d_change']+(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7)))
 
     auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
     auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
