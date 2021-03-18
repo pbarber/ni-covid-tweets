@@ -5,6 +5,8 @@ import boto3
 import pandas
 import tweepy
 
+from shared import S3_scraper_index
+
 donottweet = True
 
 def lambda_handler(event, context):
@@ -36,6 +38,10 @@ def lambda_handler(event, context):
 
     # Download the most recently updated Excel file
     s3 = boto3.client('s3')
+    status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
+    index = status.get_dict()
+
+    # Download the most recently updated Excel file
     changes = sorted(event['payload'], key=lambda k: k['filedate'], reverse=True)
     obj = s3.get_object(Bucket=secret['bucketname'],Key=changes[0]['keyname'])['Body']
 
@@ -79,7 +85,6 @@ def lambda_handler(event, context):
     prev=prev,
     est_7d=est_7d,
     prev_7d=prev_7d)
-    print(tweet)
 
     auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
     auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
@@ -89,10 +94,16 @@ def lambda_handler(event, context):
     if not donottweet:
         resp = api.update_status(tweet)
         if resp.statusCode == 200:
-            message = 'Tweeted ID %s' %resp.id_str
+            for i in range(len(index)):
+                if index[i]['filedate'] == changes[0]['filedate']:
+                    index[i]['tweet'] = resp.id
+                    break
+            status.put_dict(index)
+            message = 'Tweeted ID %s and updated %s' %(resp.id, secret['doh-dd-index'])
         else:
             message = 'ERROR: Twitter API returned %s' %resp
     else:
+        print(tweet)
         message = 'Did not tweet'
 
     return {

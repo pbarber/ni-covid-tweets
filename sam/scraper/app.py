@@ -6,7 +6,7 @@ import requests
 from bs4 import BeautifulSoup
 import boto3
 
-from shared import S3_scraper_status
+from shared import S3_scraper_index
 
 donotlaunch = True
 
@@ -91,7 +91,7 @@ def lambda_handler(event, context):
 
     # Get the previous data file list from S3
     s3 = boto3.client('s3')
-    status = S3_scraper_status(s3, secret['bucketname'], secret['doh-dd-index'])
+    status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
     previous = status.get_dict()
 
     # Check the DoH site for file changes

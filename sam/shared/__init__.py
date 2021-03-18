@@ -1,6 +1,6 @@
 import json
 
-class S3_scraper_status:
+class S3_scraper_index:
     def __init__(self, client, bucketname, keyname):
         self.client = client
         self.bucketname = bucketname
