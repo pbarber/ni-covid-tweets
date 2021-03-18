@@ -91,7 +91,7 @@ def lambda_handler(event, context):
 
     api = tweepy.API(auth)
 
-    if not donottweet:
+    if changes[0].get('notweet') is not True:
         resp = api.update_status(tweet)
         for i in range(len(index)):
             if index[i]['filedate'] == changes[0]['filedate']:
