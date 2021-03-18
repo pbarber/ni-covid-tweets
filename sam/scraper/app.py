@@ -6,9 +6,24 @@ import requests
 from bs4 import BeautifulSoup
 import boto3
 
-keyname = 'scraper_data.json'
-bucketname = 'ni-covid-tweets'
-files_to_check = 5
+donotlaunch = True
+
+class S3_scraper_status:
+    def __init__(self, client, bucketname, keyname):
+        self.client = client
+        self.bucketname = bucketname
+        self.keyname = keyname
+
+    def get_dict(self):
+        try:
+            dataobj = self.client.get_object(Bucket=self.bucketname,Key=self.keyname)
+        except self.client.exceptions.NoSuchKey:
+            print("The object %s does not exist in bucket %s." %(self.keyname, self.bucketname))
+            return []
+        return json.load(dataobj['Body'])
+
+    def put_dict(self, data):
+        self.client.put_object(Bucket=self.bucketname, Key=self.keyname, Body=json.dumps(data))
 
 def extract_excel_list(text):
     html = BeautifulSoup(text,features="html.parser")
@@ -25,7 +40,7 @@ def extract_excel_list(text):
                 excels.append({'url': a['href'],'modified': modified.isoformat(), 'length': int(resp.headers['Content-Length']), 'filedate': filedate.date().isoformat()})
     return excels
 
-def check_for_files(s3client, bucket, previous):
+def check_for_files(s3client, bucket, previous, files_to_check):
     # Attempt to pull this month's list of daily data publications
     today = datetime.datetime.today()
     url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(today.strftime("%B").lower(),today.year)
@@ -45,7 +60,7 @@ def check_for_files(s3client, bucket, previous):
     excels = sorted(excels, key=lambda k: k['filedate'], reverse=True)
     excels = excels[:files_to_check]
     # Work through the list checking against the previous data list
-    changes = 0
+    changes = []
     for e in excels:
         match = next((p for p in previous if p["filedate"] == e["filedate"]), None)
         if (match is None) or ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
@@ -55,7 +70,7 @@ def check_for_files(s3client, bucket, previous):
             keyname = "DoH-DD/%s/%s-%s.xlsx" %(e['filedate'],e['modified'].replace(':','_'),e['length'])
             s3client.put_object(Bucket=bucket, Key=keyname, Body=resp.content)
             e['keyname'] = keyname
-            changes += 1
+            changes.append(e)
     # Create the new list
     for p in previous:
         if (p not in excels) and (p['filedate'] not in [e['filedate'] for e in excels]):
@@ -84,23 +99,34 @@ def lambda_handler(event, context):
         Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
     """
 
-    s3 = boto3.client('s3')
+    # Get the secret
+    sm = boto3.client('secretsmanager')
+    secretobj = sm.get_secret_value(SecretId='ni-covid-tweets')
+    secret = json.loads(secretobj['SecretString'])
 
     # Get the previous data file list from S3
-    try:
-        dataobj = s3.get_object(Bucket=bucketname,Key=keyname)
-        previous = json.load(dataobj['Body'])
-    except s3.exceptions.NoSuchKey:
-        print("The object %s does not exist in bucket %s." %(keyname, bucketname))
-        previous = []
+    s3 = boto3.client('s3')
+    status = S3_scraper_status(s3, secret['bucketname'], secret['doh-dd-index'])
+    previous = status.get_dict()
 
     # Check the DoH site for file changes
-    current, changes = check_for_files(s3, bucketname, previous)
+    current, changes = check_for_files(s3, secret['bucketname'], previous, secret['doh-dd-files-to-check'])
 
     # Write any changes back to S3
-    if changes > 0:
-        s3.put_object(Bucket=bucketname, Key=keyname, Body=json.dumps(current))
-        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), keyname, changes)
+    if len(changes) > 0:
+        status.put_dict(current)
+        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), secret['doh-dd-index'], len(changes))
+
+        # Find the most recent date and make sure that its file has changed, if it has then tweet
+        current = sorted(current, key=lambda k: k['filedate'], reverse=True)
+        if not donotlaunch and (current[0]['filedate'] in [c['filedate'] for c in changes]):
+            lambda_client = boto3.client('lambda')
+            lambda_client.invoke(
+                FunctionName='NICOVIDTweeter',
+                InvocationType='Event',
+                Payload=json.dumps(current)
+            )
+            message += ', and launched tweet lambda'
     else:
         message = 'Did nothing'
 
