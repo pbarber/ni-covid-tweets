@@ -8,7 +8,7 @@ import boto3
 
 from shared import S3_scraper_index
 
-donotlaunch = True
+donotlaunch = False
 
 def extract_excel_list(text):
     html = BeautifulSoup(text,features="html.parser")
