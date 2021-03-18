@@ -17,8 +17,10 @@ Resources:
       CodeUri: scraper/
       Handler: app.lambda_handler
       Runtime: python3.8
-      Timeout: 15
+      Timeout: 30
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
       Events:
         InvocationLevel:
           Type: Schedule
@@ -32,3 +34,5 @@ Resources:
       Runtime: python3.8
       Timeout: 15
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
