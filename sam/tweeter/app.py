@@ -7,7 +7,7 @@ import tweepy
 
 from shared import S3_scraper_index
 
-donottweet = True
+donottweet = False
 
 def lambda_handler(event, context):
     """Sample pure Lambda function
@@ -93,15 +93,12 @@ def lambda_handler(event, context):
 
     if not donottweet:
         resp = api.update_status(tweet)
-        if resp.statusCode == 200:
-            for i in range(len(index)):
-                if index[i]['filedate'] == changes[0]['filedate']:
-                    index[i]['tweet'] = resp.id
-                    break
-            status.put_dict(index)
-            message = 'Tweeted ID %s and updated %s' %(resp.id, secret['doh-dd-index'])
-        else:
-            message = 'ERROR: Twitter API returned %s' %resp
+        for i in range(len(index)):
+            if index[i]['filedate'] == changes[0]['filedate']:
+                index[i]['tweet'] = resp.id
+                break
+        status.put_dict(index)
+        message = 'Tweeted ID %s and updated %s' %(resp.id, secret['doh-dd-index'])
     else:
         print(tweet)
         message = 'Did not tweet'
