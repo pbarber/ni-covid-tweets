@@ -7,5 +7,5 @@ s3_bucket = "aws-sam-cli-managed-default-samclisourcebucket-bhyx6qie1x2q"
 s3_prefix = "ni-covid-tweets"
 region = "eu-west-2"
 profile = "codeandnumbers"
-confirm_changeset = true
+confirm_changeset = false
 capabilities = "CAPABILITY_IAM"
