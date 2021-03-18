@@ -42,7 +42,7 @@ def lambda_handler(event, context):
     index = status.get_dict()
 
     # Download the most recently updated Excel file
-    changes = sorted(event['payload'], key=lambda k: k['filedate'], reverse=True)
+    changes = sorted(event, key=lambda k: k['filedate'], reverse=True)
     obj = s3.get_object(Bucket=secret['bucketname'],Key=changes[0]['keyname'])['Body']
 
     df = pandas.read_excel(io.BytesIO(obj.read()),engine='openpyxl', sheet_name='Summary Tests')
