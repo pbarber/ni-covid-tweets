@@ -37,8 +37,8 @@ Last updated: {date}
     pct_f=event['Total First Doses'] / event['Total Doses'],
     pct_s=event['Total Second Doses'] / event['Total Doses'],
     date=event['Last Updated'],
-    pop_f=event['Total First Doses'] / 1513167,
-    pop_s=event['Total Second Doses'] / 1513167
+    pop_f=event['Total First Doses'] / 1466885,
+    pop_s=event['Total Second Doses'] / 1466885
     )
 
     auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
