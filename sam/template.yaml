@@ -12,7 +12,7 @@ Globals:
 
 Resources:
   NICOVIDScraper:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Type: AWS::Serverless::Function
     Properties:
       CodeUri: scraper/
       Handler: app.lambda_handler
@@ -27,7 +27,7 @@ Resources:
           Properties:
             Schedule: rate(10 minutes)
   NICOVIDTweeter:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Type: AWS::Serverless::Function
     Properties:
       CodeUri: tweeter/
       Handler: app.lambda_handler
@@ -37,7 +37,7 @@ Resources:
       EventInvokeConfig:
         MaximumRetryAttempts: 0
   NICOVIDVaccineScraper:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Type: AWS::Serverless::Function
     Properties:
       CodeUri: vaccine-scraper/
       Handler: app.lambda_handler
@@ -52,7 +52,7 @@ Resources:
           Properties:
             Schedule: rate(10 minutes)
   NICOVIDVaccineTweeter:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+    Type: AWS::Serverless::Function
     Properties:
       CodeUri: vaccine-tweeter/
       Handler: app.lambda_handler
@@ -61,3 +61,15 @@ Resources:
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
         MaximumRetryAttempts: 0
+  NICOVIDRTweeter:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Timeout: 10
+      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+    Metadata:
+      DockerTag: textract-v2
+      DockerContext: ./
+      Dockerfile: r-tweeter/Dockerfile
