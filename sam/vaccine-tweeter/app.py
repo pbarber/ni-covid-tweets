@@ -12,7 +12,6 @@ good_symb = '\u2193'
 bad_symb = '\u2191'
 
 def lambda_handler(event, context):
-
     # Get the secret
     sm = boto3.client('secretsmanager')
     secretobj = sm.get_secret_value(SecretId='ni-covid-tweets')
@@ -68,18 +67,19 @@ Last updated: {date}. Source: HSCNI'''.format(
         pop_s=event['Total Second Doses'] / 1466885
         )
 
-    auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
-    auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-
-    api = tweepy.API(auth)
-
     if event.get('notweet') is not True:
+        auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
+        auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+
+        api = tweepy.API(auth)
         resp = api.update_status(tweet)
+
         for i in range(len(index)):
             if index[i]['Last Updated'] == event['Last Updated']:
                 index[i]['tweet'] = resp.id
                 break
         status.put_dict(index)
+
         message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
     else:
         print(tweet)
