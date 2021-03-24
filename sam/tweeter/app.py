@@ -23,27 +23,6 @@ def find_previous(df, newest, colname):
     return est, prev
 
 def lambda_handler(event, context):
-    """Sample pure Lambda function
-
-    Parameters
-    ----------
-    event: dict, required
-        API Gateway Lambda Proxy Input Format
-
-        Event doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html#api-gateway-simple-proxy-for-lambda-input-format
-
-    context: object, required
-        Lambda Context runtime methods and attributes
-
-        Context doc: https://docs.aws.amazon.com/lambda/latest/dg/python-context-object.html
-
-    Returns
-    ------
-    API Gateway Lambda Proxy Output Format: dict
-
-        Return doc: https://docs.aws.amazon.com/apigateway/latest/developerguide/set-up-lambda-proxy-integrations.html
-    """
-
     # Get the secret
     sm = boto3.client('secretsmanager')
     secretobj = sm.get_secret_value(SecretId='ni-covid-tweets')
@@ -98,18 +77,20 @@ def lambda_handler(event, context):
     dif_7d=int(abs(round(latest_7d['rolling_7d_change'],0))),
     pct_7d=latest_7d['rolling_7d_change']/(latest_7d['rolling_7d_change']+(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7)))
 
-    auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
-    auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-
-    api = tweepy.API(auth)
-
     if changes[0].get('notweet') is not True:
+        auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
+        auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+
+        api = tweepy.API(auth)
+
         resp = api.update_status(tweet)
+
         for i in range(len(index)):
             if index[i]['filedate'] == changes[0]['filedate']:
                 index[i]['tweet'] = resp.id
                 break
         status.put_dict(index)
+
         message = 'Tweeted ID %s and updated %s' %(resp.id, secret['doh-dd-index'])
     else:
         print(tweet)
