@@ -14,15 +14,11 @@ def lambda_handler(event, context):
     secretobj = sm.get_secret_value(SecretId='ni-covid-tweets')
     secret = json.loads(secretobj['SecretString'])
 
-    # Download the index
-    s3 = boto3.client('s3')
-    status = S3_scraper_index(s3, secret['bucketname'], secret['doh-r-index'])
-    index = status.get_dict()
-
     # Download the most recently updated PDF file
+    s3 = boto3.client('s3')
     tmp = tempfile.NamedTemporaryFile(suffix='.pdf')
     with open(tmp.name, 'wb') as fp:
-        s3.download_fileobj(secret['bucketname'],event['keyname'], fp)
+        s3.download_fileobj(secret['bucketname'],event['keyname'],fp)
     text = textract.process(tmp.name, method='pdfminer').decode('utf-8')
     first = True
     regex = re.compile(r'^Current estimate of Rt \((.*)\):\s+(.*)$')
@@ -44,6 +40,9 @@ def lambda_handler(event, context):
 
         resp = api.update_status(tweet)
 
+        # Download and update the index
+        status = S3_scraper_index(s3, secret['bucketname'], secret['doh-r-index'])
+        index = status.get_dict()
         for i in range(len(index)):
             if index[i]['filedate'] == event['filedate']:
                 index[i]['tweet'] = resp.id
