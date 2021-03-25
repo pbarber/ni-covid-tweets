@@ -1,5 +1,8 @@
 import json
 
+import boto3
+import requests
+
 class S3_scraper_index:
     def __init__(self, client, bucketname, keyname):
         self.client = client
@@ -16,3 +19,21 @@ class S3_scraper_index:
 
     def put_dict(self, data):
         self.client.put_object(Bucket=self.bucketname, Key=self.keyname, Body=json.dumps(data))
+
+def launch_lambda_async(functionname, payload):
+    lambda_client = boto3.client('lambda')
+    lambda_client.invoke(
+        FunctionName=functionname,
+        InvocationType='Event',
+        Payload=json.dumps(payload)
+    )
+
+def get_url(url, format):
+    resp = requests.get(url)
+    resp.raise_for_status()
+    if format=='text':
+        return(resp.text)
+    elif format=='content':
+        return(resp.content)
+    else:
+        return(resp.json())
