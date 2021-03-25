@@ -73,7 +73,7 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check):
 
 def check_for_r_files(s3client, bucket, previous):
     # Attempt to pull the list of R number publications
-    url = 'https://www.health-ni.gov.uk/r-number'
+    url = 'https://www.health-ni.gov.uk/R-Number'
     pdfs = extract_doh_file_list(get_url(url,'text'), 'pdf', 1)
     # Merge the new data into the previous list and detect changes
     index, changes = check_file_list_against_previous(pdfs, previous)
