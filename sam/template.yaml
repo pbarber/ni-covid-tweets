@@ -36,21 +36,6 @@ Resources:
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
         MaximumRetryAttempts: 0
-  NICOVIDVaccineScraper:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: vaccine-scraper/
-      Handler: app.lambda_handler
-      Runtime: python3.8
-      Timeout: 5
-      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
-      EventInvokeConfig:
-        MaximumRetryAttempts: 0
-      Events:
-        InvocationLevel:
-          Type: Schedule
-          Properties:
-            Schedule: rate(10 minutes)
   NICOVIDVaccineTweeter:
     Type: AWS::Serverless::Function
     Properties:

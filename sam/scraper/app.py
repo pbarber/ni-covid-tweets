@@ -107,13 +107,143 @@ def check_doh(secret, s3, notweet, mode):
 
         # If the most recent file has changed then tweet
         if not notweet and (0 in changes):
-            print('Launching tweeter')
+            print('Launching %s tweeter' %mode)
             launch_lambda_async(lambdaname,current[0])
-            message += ', and launched tweet lambda'
+            message += ', and launched %s tweet lambda' %mode
     else:
         message = 'Did nothing'
 
     return message
+
+def check_hscni(bucketname, indexkey, s3):
+    status = S3_scraper_index(s3, bucketname, indexkey)
+    previous = status.get_dict()
+    if len(previous) > 0:
+        previous = sorted(previous, key=lambda k: k['Last Updated'], reverse=True)
+
+    # Get the COVID-19 site homepage
+    url = 'https://covid-19.hscni.net/'
+    html = BeautifulSoup(get_url(url,'text'),features="html.parser")
+
+    # Extract the vaccine data
+    div = html.find("div", {"class": "bg-vaccine-soft"})
+    heads = []
+    for head in div.find_all("h4"):
+        heads.append(head.text)
+    items = []
+    for item in div.find_all("div", {"class": "text-5xl"}):
+        items.append(item.text)
+    data = {}
+    if len(heads) == len(items) and len(items) > 0:
+        for i in range(len(heads)):
+            data[heads[i]] = int(items[i].replace(',',''))
+    rawdate = div.find("div", {"class": "mt-8"}).text.partition(':')[2].strip()
+
+    # Format silly date string properly, if not this year assume last year
+    noyeardate = datetime.datetime.strptime(rawdate, '%d %B, %I:%M %p').date() # 25 March, 12:07 pm
+    today = datetime.datetime.today()
+    if noyeardate.month > today.month:
+        reportdate = noyeardate.replace(year=today.year-1) - datetime.timedelta(days=1)
+    else:
+        reportdate = noyeardate.replace(year=today.year) - datetime.timedelta(days=1)
+
+    # Account for one day delay in reporting
+    data['Last Updated'] = reportdate.isoformat()
+    data['First Doses pc'] = round((100 * data['Total First Doses']) / 1452962, 1)
+    data['Second Doses pc'] = round((100 * data['Total Second Doses']) / 1452962, 1)
+    data['Source'] = 'HSCNI'
+
+    # Do change detection
+    change = False
+    if len(previous) > 0:
+        if (data['Last Updated'] != previous[0]['Last Updated']):
+            data['First Doses Registered'] = data['Total First Doses'] - previous[0]['Total First Doses']
+            data['Second Doses Registered'] = data['Total Second Doses'] - previous[0]['Total Second Doses']
+            previous.insert(0, data)
+            change = True
+        elif (data['Total Doses'] != previous[0]['Total Doses']):
+            data['First Doses Registered'] = data['Total First Doses'] - previous[1]['Total First Doses']
+            data['Second Doses Registered'] = data['Total Second Doses'] - previous[1]['Total Second Doses']
+            previous[0] = data
+            change = True
+    else:
+        data['First Doses Registered'] = data['Total First Doses']
+        data['Second Doses Registered'] = data['Total Second Doses']
+        previous.insert(0, data)
+        change = True
+
+    if change:
+        status.put_dict(previous)
+
+    return previous[0], change
+
+def check_phe(bucketname, indexkey, s3):
+    status = S3_scraper_index(s3, bucketname, indexkey)
+    previous = status.get_dict()
+    if len(previous) > 0:
+        previous = sorted(previous, key=lambda k: k['Last Updated'], reverse=True)
+
+    # Get the PHE data from the API
+    url = 'https://api.coronavirus.data.gov.uk/v2/data?areaType=nation&areaCode=N92000002&metric=cumPeopleVaccinatedFirstDoseByPublishDate&metric=cumPeopleVaccinatedSecondDoseByPublishDate&metric=cumVaccinationFirstDoseUptakeByPublishDatePercentage&metric=cumVaccinationSecondDoseUptakeByPublishDatePercentage&format=json'
+    ordered = sorted(get_url(url,'json').get('body',[]), key=lambda k: k['date'], reverse=True)
+
+    change = False
+    if (len(ordered) > 1):
+        data = {
+            'Last Updated': ordered[0]['date'],
+            'Total Doses': ordered[0]['cumPeopleVaccinatedFirstDoseByPublishDate'] + ordered[0]['cumPeopleVaccinatedSecondDoseByPublishDate'],
+            'Total First Doses': ordered[0]['cumPeopleVaccinatedFirstDoseByPublishDate'],
+            'Total Second Doses': ordered[0]['cumPeopleVaccinatedSecondDoseByPublishDate'],
+            'First Doses Registered': ordered[0]['cumPeopleVaccinatedFirstDoseByPublishDate'] - ordered[1]['cumPeopleVaccinatedFirstDoseByPublishDate'],
+            'Second Doses Registered': ordered[0]['cumPeopleVaccinatedSecondDoseByPublishDate'] - ordered[1]['cumPeopleVaccinatedSecondDoseByPublishDate'],
+            'First Doses pc': ordered[0]['cumVaccinationFirstDoseUptakeByPublishDatePercentage'],
+            'Second Doses pc': ordered[0]['cumVaccinationSecondDoseUptakeByPublishDatePercentage'],
+            'Source': 'PHE'
+        }
+        if len(previous) > 0:
+            if (data['Last Updated'] != previous[0]['Last Updated']):
+                previous.insert(0, data)
+                change = True
+            elif (data['Total Doses'] != previous[0]['Total Doses']):
+                previous[0] = data
+                change = True
+        else:
+            previous.insert(0, data)
+            change = True
+
+    if change:
+        status.put_dict(previous)
+
+    return previous[0], change
+
+
+def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
+
+    phe, phechange = check_phe(bucketname, pheindexkey, s3)
+    hsc, hscchange = check_hscni(bucketname, hscniindexkey, s3)
+
+    # If there has been a change, then tweet
+    message = 'Did nothing'
+    change = False
+    if hscchange and (hsc['Last Updated'] > phe['Last Updated']):
+        chosen = hsc
+        change = True
+    elif phechange and (phe['Last Updated'] > hsc['Last Updated']):
+        chosen = phe
+        change = True
+    elif hscchange and phechange and (phe['Last Updated'] == hsc['Last Updated']):
+        chosen = phe
+        change = True
+
+    if change is True:
+        message = 'New last updated date of %s from %s' %(chosen['Last Updated'],chosen['Source'])
+        print(chosen)
+        if not notweet:
+            print('Launching vaccine tweeter')
+            launch_lambda_async('ni-covid-tweets-NICOVIDVaccineTweeter-1Q5CK6FJHAEOY',chosen)
+            message += ', and launched vaccine tweet lambda'
+
+    return(message)
 
 def lambda_handler(event, context):
     # Get the secret
@@ -128,6 +258,7 @@ def lambda_handler(event, context):
     messages = []
     messages.append(check_doh(secret, s3, event.get('tests-notweet', False), 'dd'))
     messages.append(check_doh(secret, s3, event.get('r-notweet', False), 'r'))
+    messages.append(check_vaccine(secret['bucketname'], secret['phe-vacc-index'], secret['hscni-vacc-index'], s3, event.get('vacc-notweet', False)))
 
     return {
         "statusCode": 200,

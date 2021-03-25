@@ -1,1 +1,13 @@
-{"Total Doses": 726290, "Last 24 Hours": 9067, "Total First Doses": 655581, "Total Second Doses": 70709, "Last Updated": "19 March, 1:12 pm", "notweet": true}
+{
+    "Total Doses": 726290,
+    "Last 24 Hours": 9067,
+    "Total First Doses": 655581,
+    "Total Second Doses": 70709,
+    "First Doses Registered": 7335,
+    "Second Doses Registered": 7571,
+    "First Doses pc": 43.2,
+    "Second Doses pc": 5.4,
+    "Last Updated": "2021-03-19",
+    "notweet": true,
+    "Source": "HSCNI"
+}
