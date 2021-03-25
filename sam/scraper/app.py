@@ -8,12 +8,10 @@ import boto3
 
 from shared import S3_scraper_index
 
-donotlaunch = False
-
-def extract_excel_list(text):
+def extract_doh_file_list(text,extension,number):
     html = BeautifulSoup(text,features="html.parser")
-    excels = []
-    regex = re.compile('-(\d{6}).*\.xlsx$')
+    files = []
+    regex = re.compile('-(\d{6}).*\.%s$' %extension)
     for nigovfile in html.find_all("div", {"class": "nigovfile"}):
         for a in nigovfile.find_all('a', href=True):
             m = regex.search(a['href'])
@@ -22,26 +20,12 @@ def extract_excel_list(text):
                 resp.raise_for_status()
                 filedate = datetime.datetime.strptime(m.group(1),'%d%m%y')
                 modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
-                excels.append({'url': a['href'],'modified': modified.isoformat(), 'length': int(resp.headers['Content-Length']), 'filedate': filedate.date().isoformat()})
-    return excels
-
-def extract_newest_pdf(text):
-    html = BeautifulSoup(text,features="html.parser")
-    pdf = None
-    regex = re.compile('-(\d{6}).*\.pdf$')
-    for nigovfile in html.find_all("div", {"class": "nigovfile"}):
-        for a in nigovfile.find_all('a', href=True):
-            m = regex.search(a['href'])
-            if m:
-                resp = requests.head(a['href'])
-                resp.raise_for_status()
-                filedate = datetime.datetime.strptime(m.group(1),'%d%m%y')
-                modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
-                pdf = {'url': a['href'],'modified': modified.isoformat(), 'length': int(resp.headers['Content-Length']), 'filedate': filedate.date().isoformat()}
-                break
-        if pdf is not None:
+                files.append({'url': a['href'],'modified': modified.isoformat(), 'length': int(resp.headers['Content-Length']), 'filedate': filedate.date().isoformat()})
+                if len(files)>=number:
+                    break
+        if len(files)>=number:
             break
-    return pdf
+    return files
 
 def check_for_dd_files(s3client, bucket, previous, files_to_check):
     # Attempt to pull this month's list of daily data publications
@@ -52,16 +36,15 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check):
         print('Failed to get latest month from %s, rolling back to previous month' %url)
         excels = []
     else:
-        excels = extract_excel_list(resp.text)
+        excels = extract_doh_file_list(resp.text, 'xlsx', files_to_check)
     # Pull last month's as well, if we need to, to ensure we always have N days of data checked
     if len(excels) <= files_to_check:
         last_month = today.replace(day=1) - datetime.timedelta(days=1)
         url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(last_month.strftime("%B").lower(),last_month.year)
         resp = requests.get(url)
         resp.raise_for_status()
-        excels.extend(extract_excel_list(resp.text))
+        excels.extend(extract_doh_file_list(resp.text, 'xlsx', files_to_check-len(excels)))
     excels = sorted(excels, key=lambda k: k['filedate'], reverse=True)
-    excels = excels[:files_to_check]
     # Work through the list checking against the previous data list
     changes = []
     for e in excels:
@@ -85,23 +68,23 @@ def check_for_r_files(s3client, bucket, previous):
     url = 'https://www.health-ni.gov.uk/r-number'
     resp = requests.get(url)
     resp.raise_for_status()
-    pdf = extract_newest_pdf(resp.text)
+    pdfs = extract_doh_file_list(resp.text, 'pdf', 1)
     change = False
-    if pdf is not None:
+    if len(pdfs) != 0:
         if len(previous) > 0:
-            match = next((p for p in previous if p["filedate"] == pdf["filedate"]), None)
-            if (match is None) or ((match['modified'] != pdf['modified']) or (match['length'] != pdf['length'])):
+            match = next((p for p in previous if p["filedate"] == pdfs[0]["filedate"]), None)
+            if (match is None) or ((match['modified'] != pdfs[0]['modified']) or (match['length'] != pdfs[0]['length'])):
                 change = True
         else:
             change = True
     if change is True:
         # Store the new or updated file in S3
-        resp = requests.get(pdf['url'])
+        resp = requests.get(pdfs[0]['url'])
         resp.raise_for_status()
-        keyname = "DoH-R/%s/%s-%s.pdf" %(pdf['filedate'],pdf['modified'].replace(':','_'),pdf['length'])
+        keyname = "DoH-R/%s/%s-%s.pdf" %(pdfs[0]['filedate'],pdfs[0]['modified'].replace(':','_'),pdfs[0]['length'])
         s3client.put_object(Bucket=bucket, Key=keyname, Body=resp.content)
-        pdf['keyname'] = keyname
-    return pdf, change
+        pdfs[0]['keyname'] = keyname
+    return pdfs, change
 
 def check_doh_dd(secret, s3, notweet):
     # Get the previous data file list from S3
@@ -146,7 +129,7 @@ def check_doh_r(secret, s3, notweet):
         message = 'Wrote updated item to %s' %secret['doh-r-index']
 
         print('Launching tweeter with event %s' %current)
-        if not donotlaunch:
+        if not notweet:
             lambda_client = boto3.client('lambda')
             lambda_client.invoke(
                 FunctionName='ni-covid-tweets-NICOVIDRTweeter-1D5BES9FN6F5B',
@@ -168,9 +151,10 @@ def lambda_handler(event, context):
     # Set up S3 client
     s3 = boto3.client('s3')
 
+    # Run the scraper
     messages = []
-    messages.append(check_doh_dd(secret, s3, donotlaunch))
-    messages.append(check_doh_r(secret, s3, donotlaunch))
+    messages.append(check_doh_dd(secret, s3, event.get('tests-notweet', False)))
+    messages.append(check_doh_r(secret, s3, event.get('r-notweet', False)))
 
     return {
         "statusCode": 200,
