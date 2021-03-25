@@ -6,12 +6,12 @@ import requests
 from bs4 import BeautifulSoup
 import boto3
 
-from shared import S3_scraper_index
+from shared import S3_scraper_index, launch_lambda_async, get_url
 
 def extract_doh_file_list(text,extension,number):
     html = BeautifulSoup(text,features="html.parser")
     files = []
-    regex = re.compile('-(\d{6}).*\.%s$' %extension)
+    regex = re.compile(r'-(\d{6}).*\.%s$' %extension)
     for nigovfile in html.find_all("div", {"class": "nigovfile"}):
         for a in nigovfile.find_all('a', href=True):
             m = regex.search(a['href'])
@@ -27,115 +27,88 @@ def extract_doh_file_list(text,extension,number):
             break
     return files
 
+def check_file_list_against_previous(current, previous):
+    changes = []
+    for e in reversed(current):
+        match = next((p for p in previous if p["filedate"] == e["filedate"]), None)
+        if match is None:
+            changes = [c+1 for c in changes]
+            changes.append(0)
+            previous.insert(0, e)
+        elif ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
+            changes.append(previous.index(match))
+            previous[changes[-1]] = e
+    return previous, changes
+
+def upload_changes_to_s3(s3client, bucket, dirname, index, changes, fileext):
+    for change in changes:
+        e = index[change]
+        keyname = "%s/%s/%s-%s.%s" %(dirname,e['filedate'],e['modified'].replace(':','_'),e['length'],fileext)
+        s3client.put_object(Bucket=bucket, Key=keyname, Body=get_url(e['url'],'content'))
+        index[change]['keyname'] = keyname
+    return index
+
 def check_for_dd_files(s3client, bucket, previous, files_to_check):
     # Attempt to pull this month's list of daily data publications
     today = datetime.datetime.today()
     url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(today.strftime("%B").lower(),today.year)
-    resp = requests.get(url)
-    if resp.status_code == 404:
-        print('Failed to get latest month from %s, rolling back to previous month' %url)
-        excels = []
-    else:
-        excels = extract_doh_file_list(resp.text, 'xlsx', files_to_check)
+    excels = []
+    try:
+        excels.extend(extract_doh_file_list(get_url(url, 'text'), 'xlsx', files_to_check))
+    except requests.exceptions.HTTPError as err:
+        if err.response.status_code == 404:
+            print('Failed to get latest month from %s, rolling back to previous month' %url)
+        else:
+            raise err
     # Pull last month's as well, if we need to, to ensure we always have N days of data checked
     if len(excels) <= files_to_check:
         last_month = today.replace(day=1) - datetime.timedelta(days=1)
         url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(last_month.strftime("%B").lower(),last_month.year)
-        resp = requests.get(url)
-        resp.raise_for_status()
-        excels.extend(extract_doh_file_list(resp.text, 'xlsx', files_to_check-len(excels)))
-    excels = sorted(excels, key=lambda k: k['filedate'], reverse=True)
-    # Work through the list checking against the previous data list
-    changes = []
-    for e in excels:
-        match = next((p for p in previous if p["filedate"] == e["filedate"]), None)
-        if (match is None) or ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
-            # Store the new or updated file in S3
-            resp = requests.get(e['url'])
-            resp.raise_for_status()
-            keyname = "DoH-DD/%s/%s-%s.xlsx" %(e['filedate'],e['modified'].replace(':','_'),e['length'])
-            s3client.put_object(Bucket=bucket, Key=keyname, Body=resp.content)
-            e['keyname'] = keyname
-            changes.append(e)
-    # Create the new list
-    for p in previous:
-        if (p not in excels) and (p['filedate'] not in [e['filedate'] for e in excels]):
-            excels.insert(0,p)
-    return excels, changes
+        excels.extend(extract_doh_file_list(get_url(url, 'text'), 'xlsx', files_to_check-len(excels)))
+    # Merge the new data into the previous list and detect changes
+    index, changes = check_file_list_against_previous(excels, previous)
+    # Upload the changed files to s3
+    index = upload_changes_to_s3(s3client, bucket, 'DoH-DD', index, changes, 'xlsx')
+    return index, changes
 
 def check_for_r_files(s3client, bucket, previous):
     # Attempt to pull the list of R number publications
     url = 'https://www.health-ni.gov.uk/r-number'
-    resp = requests.get(url)
-    resp.raise_for_status()
-    pdfs = extract_doh_file_list(resp.text, 'pdf', 1)
-    change = False
-    if len(pdfs) != 0:
-        if len(previous) > 0:
-            match = next((p for p in previous if p["filedate"] == pdfs[0]["filedate"]), None)
-            if (match is None) or ((match['modified'] != pdfs[0]['modified']) or (match['length'] != pdfs[0]['length'])):
-                change = True
-        else:
-            change = True
-    if change is True:
-        # Store the new or updated file in S3
-        resp = requests.get(pdfs[0]['url'])
-        resp.raise_for_status()
-        keyname = "DoH-R/%s/%s-%s.pdf" %(pdfs[0]['filedate'],pdfs[0]['modified'].replace(':','_'),pdfs[0]['length'])
-        s3client.put_object(Bucket=bucket, Key=keyname, Body=resp.content)
-        pdfs[0]['keyname'] = keyname
-    return pdfs, change
+    pdfs = extract_doh_file_list(get_url(url,'text'), 'pdf', 1)
+    # Merge the new data into the previous list and detect changes
+    index, changes = check_file_list_against_previous(pdfs, previous)
+    # Upload the changed files to s3
+    index = upload_changes_to_s3(s3client, bucket, 'DoH-R', index, changes, 'pdf')
+    return index, changes
 
-def check_doh_dd(secret, s3, notweet):
+def check_doh(secret, s3, notweet, mode):
+    if mode=='dd':
+        indexkey = secret['doh-dd-index']
+        lambdaname = 'ni-covid-tweets-NICOVIDTweeter-7GUXQLKTJDEK'
+    else:
+        indexkey = secret['doh-r-index']
+        lambdaname = 'ni-covid-tweets-NICOVIDRTweeter-1D5BES9FN6F5B'
+
     # Get the previous data file list from S3
-    status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
+    status = S3_scraper_index(s3, secret['bucketname'], indexkey)
     previous = status.get_dict()
+    previous = sorted(previous, key=lambda k: k['filedate'], reverse=True)
 
     # Check the DoH site for file changes
-    current, changes = check_for_dd_files(s3, secret['bucketname'], previous, int(secret['doh-dd-files-to-check']))
+    if mode=='dd':
+        current, changes = check_for_dd_files(s3, secret['bucketname'], previous, int(secret['doh-dd-files-to-check']))
+    else:
+        current, changes = check_for_r_files(s3, secret['bucketname'], previous)
 
     # Write any changes back to S3
     if len(changes) > 0:
         status.put_dict(current)
-        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), secret['doh-dd-index'], len(changes))
+        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
 
-        # Find the most recent date and make sure that its file has changed, if it has then tweet
-        current = sorted(current, key=lambda k: k['filedate'], reverse=True)
-        if not notweet and (current[0]['filedate'] in [c['filedate'] for c in changes]):
+        # If the most recent file has changed then tweet
+        if not notweet and (0 in changes):
             print('Launching tweeter')
-            lambda_client = boto3.client('lambda')
-            lambda_client.invoke(
-                FunctionName='ni-covid-tweets-NICOVIDTweeter-7GUXQLKTJDEK',
-                InvocationType='Event',
-                Payload=json.dumps(current)
-            )
-            message += ', and launched tweet lambda'
-    else:
-        message = 'Did nothing'
-
-    return message
-
-def check_doh_r(secret, s3, notweet):
-    # Get the previous data file list from S3
-    status = S3_scraper_index(s3, secret['bucketname'], secret['doh-r-index'])
-    previous = status.get_dict()
-
-    # Check the DoH site for file changes
-    current, change = check_for_r_files(s3, secret['bucketname'], previous)
-
-    # Write any changes back to S3
-    if change is True:
-        status.put_dict([current])
-        message = 'Wrote updated item to %s' %secret['doh-r-index']
-
-        print('Launching tweeter with event %s' %current)
-        if not notweet:
-            lambda_client = boto3.client('lambda')
-            lambda_client.invoke(
-                FunctionName='ni-covid-tweets-NICOVIDRTweeter-1D5BES9FN6F5B',
-                InvocationType='Event',
-                Payload=json.dumps(current)
-            )
+            launch_lambda_async(lambdaname,current[0])
             message += ', and launched tweet lambda'
     else:
         message = 'Did nothing'
@@ -153,8 +126,8 @@ def lambda_handler(event, context):
 
     # Run the scraper
     messages = []
-    messages.append(check_doh_dd(secret, s3, event.get('tests-notweet', False)))
-    messages.append(check_doh_r(secret, s3, event.get('r-notweet', False)))
+    messages.append(check_doh(secret, s3, event.get('tests-notweet', False), 'dd'))
+    messages.append(check_doh(secret, s3, event.get('r-notweet', False), 'r'))
 
     return {
         "statusCode": 200,
