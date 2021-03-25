@@ -30,12 +30,7 @@ def lambda_handler(event, context):
 
     # Download the most recently updated Excel file
     s3 = boto3.client('s3')
-    status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
-    index = status.get_dict()
-
-    # Download the most recently updated Excel file
-    changes = sorted(event, key=lambda k: k['filedate'], reverse=True)
-    obj = s3.get_object(Bucket=secret['bucketname'],Key=changes[0]['keyname'])['Body']
+    obj = s3.get_object(Bucket=secret['bucketname'],Key=event['keyname'])['Body']
     stream = io.BytesIO(obj.read())
 
     # Load test data and add extra fields
@@ -77,7 +72,7 @@ def lambda_handler(event, context):
     dif_7d=int(abs(round(latest_7d['rolling_7d_change'],0))),
     pct_7d=latest_7d['rolling_7d_change']/(latest_7d['rolling_7d_change']+(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7)))
 
-    if changes[0].get('notweet') is not True:
+    if event.get('notweet') is not True:
         auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
         auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
 
@@ -85,8 +80,11 @@ def lambda_handler(event, context):
 
         resp = api.update_status(tweet)
 
+        # Update the file index
+        status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
+        index = status.get_dict()
         for i in range(len(index)):
-            if index[i]['filedate'] == changes[0]['filedate']:
+            if index[i]['filedate'] == event['filedate']:
                 index[i]['tweet'] = resp.id
                 break
         status.put_dict(index)
