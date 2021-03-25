@@ -35,7 +35,8 @@
             ],
             "Resource": [
                 "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDTweeter-7GUXQLKTJDEK",
-                "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDVaccineTweeter-1Q5CK6FJHAEOY"
+                "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDVaccineTweeter-1Q5CK6FJHAEOY",
+                "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDRTweeter-1D5BES9FN6F5B"
             ]
         }
     ]
