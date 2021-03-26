@@ -54,12 +54,13 @@ def lambda_handler(event, context):
     admissions = pandas.read_excel(stream,engine='openpyxl',sheet_name='Admissions')
     discharges = pandas.read_excel(stream,engine='openpyxl',sheet_name='Discharges')
     totals = {
-        'ind_tested': df['ALL INDIVIDUALS TESTED'].sum(),
-        'ind_positive': df['INDIVIDUALS TESTED POSITIVE'].sum(),
-        'deaths': deaths['Number of Deaths'].sum(),
-        'admissions': admissions['Number of Admissions'].sum(),
-        'discharges': discharges['Number of Discharges'].sum()
+        'ind_tested': int(df['ALL INDIVIDUALS TESTED'].sum()),
+        'ind_positive': int(df['INDIVIDUALS TESTED POSITIVE'].sum()),
+        'deaths': int(deaths['Number of Deaths'].sum()),
+        'admissions': int(admissions['Number of Admissions'].sum()),
+        'discharges': int(discharges['Number of Discharges'].sum())
     }
+    print(totals)
 
     # Check against previous day's reports
     status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
