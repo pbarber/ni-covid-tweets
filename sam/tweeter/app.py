@@ -1,5 +1,6 @@
 import json
 import io
+import datetime
 
 import boto3
 import pandas
@@ -48,29 +49,60 @@ def lambda_handler(event, context):
     est, prev = find_previous(df, latest, 'pos_rate')
     est_7d, prev_7d = find_previous(df, latest_7d, 'rolling_pos_rate')
 
-    tweet = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive on {date}
-{est} rate since {prev}
+    # Summary stats to allow 'X registered in last 24 hours' info
+    deaths = pandas.read_excel(stream,engine='openpyxl',sheet_name='Deaths')
+    admissions = pandas.read_excel(stream,engine='openpyxl',sheet_name='Admissions')
+    discharges = pandas.read_excel(stream,engine='openpyxl',sheet_name='Discharges')
+    totals = {
+        'ind_tested': df['ALL INDIVIDUALS TESTED'].sum(),
+        'ind_positive': df['INDIVIDUALS TESTED POSITIVE'].sum(),
+        'deaths': deaths['Number of Deaths'].sum(),
+        'admissions': admissions['Number of Admissions'].sum(),
+        'discharges': discharges['Number of Discharges'].sum()
+    }
+
+    # Check against previous day's reports
+    status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
+    index = status.get_dict()
+#    previousday = datetime.datetime.strptime(event["filedate"],'%Y-%m-%d').date() - datetime.timedelta(days=1)
+#    match = next((p for p in index if datetime.datetime.strptime(p["filedate"],'%Y-%m-%d').date() == previousday), None)
+#    if match and 'totals' in match:
+#        tweet_head = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive registered on {date}'''.format(
+#            date=latest['Sample_Date'].strftime('%A %-d %B %Y'),
+#            ind_positive=(totals['ind_positive']-match['totals']['ind_positive']),
+#            ind_tested=(totals['ind_tested']-match['totals']['ind_tested']),
+#            pos_rate=(totals['ind_positive']-match['totals']['ind_positive'])/(totals['ind_tested']-match['totals']['ind_tested'])
+#        )
+#    else:
+    tweet_head = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive on {date}
+{est} rate since {prev}'''.format(
+        date=latest['Sample_Date'].strftime('%A %-d %B %Y'),
+        ind_positive=latest['INDIVIDUALS TESTED POSITIVE'],
+        ind_tested=latest['ALL INDIVIDUALS TESTED'],
+        pos_rate=latest['pos_rate'],
+        est=est,
+        prev=prev
+    )
+
+    tweet = '''{head}
 
 {pos_rate_7d:.2%} 7-day positivity rate
 {est_7d} since {prev_7d}
 
 {pos_7d:,} positive in last 7 days
 {tag_7d} {dif_7d:,} {dir_7d} than preceding 7 days ({pct_7d:.2%})
-'''.format(
-    date=latest['Sample_Date'].strftime('%A %-d %B %Y'),
-    ind_positive=latest['INDIVIDUALS TESTED POSITIVE'],
-    ind_tested=latest['ALL INDIVIDUALS TESTED'],
-    pos_rate=latest['pos_rate'],
+
+Source: {url}'''.format(
+    head=tweet_head,
     pos_rate_7d=latest_7d['rolling_pos_rate'],
-    est=est,
-    prev=prev,
     est_7d=est_7d,
     prev_7d=prev_7d,
     pos_7d=int(round(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7,0)),
     tag_7d=good_symb if int(round(latest_7d['rolling_7d_change'],0))<0 else bad_symb,
     dir_7d='fewer' if int(round(latest_7d['rolling_7d_change'],0))<0 else 'more',
     dif_7d=int(abs(round(latest_7d['rolling_7d_change'],0))),
-    pct_7d=latest_7d['rolling_7d_change']/(latest_7d['rolling_7d_change']+(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7)))
+    pct_7d=latest_7d['rolling_7d_change']/(latest_7d['rolling_7d_change']+(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7)),
+    url=event['url'])
 
     if event.get('notweet') is not True:
         auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
@@ -81,11 +113,10 @@ def lambda_handler(event, context):
         resp = api.update_status(tweet)
 
         # Update the file index
-        status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
-        index = status.get_dict()
         for i in range(len(index)):
             if index[i]['filedate'] == event['filedate']:
                 index[i]['tweet'] = resp.id
+                index[i]['totals'] = totals
                 break
         status.put_dict(index)
 
