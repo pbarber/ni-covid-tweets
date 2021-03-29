@@ -11,9 +11,9 @@ from twitter_shared import TwitterAPI
 good_symb = '\u2193'
 bad_symb = '\u2191'
 
-green_block = '\u25A0'
-white_block = '\u2B1A'
-black_block = '\u25A1'
+green_block = '\u2705'
+white_block = '\u2b1c'
+black_block = '\u2b1b'
 
 def lambda_handler(event, context):
     # Get the secret
@@ -61,7 +61,7 @@ Source: {source}'''.format(
             blocks[i//5] += white_block
         else:
             blocks[i//5] += black_block
-    tweet2 = '''Proportion over 18s vaccinated in NI:
+    tweet2 = '''Proportion over 18 vaccinated in NI:
 
 {blocks0}
 {blocks1}
@@ -82,8 +82,6 @@ One block is one person in 20
     black=black_block
 )
 
-    print(tweet2)
-
     if (event.get('tweet2test') is True) or (event.get('notweet') is not True):
         api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
         if event.get('notweet') is not True:
@@ -96,11 +94,16 @@ One block is one person in 20
             status.put_dict(index)
 
             message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
+
+            resp = api.tweet(tweet2, 1376514079985172481)
+
+            message = 'Tweeted reply ID %s' %resp.id
         elif event.get('tweet2test') is True:
             resp = api.dm(secret['twitter_dmaccount'], tweet2)
             message = 'Sent test DM'
     else:
         print(tweet)
+        print(tweet2)
         message = 'Did not tweet'
 
     return {
