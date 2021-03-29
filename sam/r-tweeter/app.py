@@ -4,9 +4,9 @@ import re
 
 import boto3
 import textract
-import tweepy
 
 from shared import S3_scraper_index
+from twitter_shared import TwitterAPI
 
 def lambda_handler(event, context):
     # Get the secret
@@ -32,15 +32,11 @@ def lambda_handler(event, context):
             elif m:
                 tweet += '\u2022 %s: %s\n' %(m.group(1),m.group(2))
             first = False
-        tweet += '\nSource: %s' %change['url']
+        tweet += '\n%s' %change['url']
 
         if change.get('notweet') is not True:
-            auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
-            auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-
-            api = tweepy.API(auth)
-
-            resp = api.update_status(tweet)
+            api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+            resp = api.tweet(tweet)
 
             # Download and update the index
             status = S3_scraper_index(s3, secret['bucketname'], secret['doh-r-index'])

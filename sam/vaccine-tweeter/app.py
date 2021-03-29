@@ -38,7 +38,7 @@ def lambda_handler(event, context):
 \u2022 {total_f:,} total first doses ({pop_f}% of NI adult population)
 \u2022 {total_s:,} total second doses ({pop_s}% of NI adult population)
 
-Source: {source}'''.format(
+{source}'''.format(
     doses_24=event['First Doses Registered'] + event['Second Doses Registered'],
     f_24=event['First Doses Registered'],
     s_24=event['Second Doses Registered'],
@@ -50,7 +50,7 @@ Source: {source}'''.format(
     date=datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%A %-d %B %Y'),
     pop_f=event['First Doses pc'],
     pop_s=event['Second Doses pc'],
-    source=event['Source']
+    source= 'https://coronavirus.data.gov.uk/' if event['Source']=='PHE' else 'https://covid-19.hscni.net/'
     )
 
     blocks = ['','','','']

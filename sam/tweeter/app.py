@@ -4,9 +4,9 @@ import datetime
 
 import boto3
 import pandas
-import tweepy
 
 from shared import S3_scraper_index
+from twitter_shared import TwitterAPI
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -95,7 +95,7 @@ def lambda_handler(event, context):
 {pos_7d:,} positive in last 7 days
 {tag_7d} {dif_7d:,} {dir_7d} than preceding 7 days ({pct_7d:.2%})
 
-Source:'''.format(
+'''.format(
             head=tweet_head,
             pos_rate_7d=latest_7d['rolling_pos_rate'],
             est_7d=est_7d,
@@ -118,12 +118,8 @@ Source:'''.format(
     for idx in range(len(tweets)):
         if tweets[idx].get('notweet') is not True:
             if (idx not in donottweet):
-                auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
-                auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-
-                api = tweepy.API(auth)
-
-                resp = api.update_status(tweets[idx]['text'] + tweets[idx]['url'])
+                api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+                resp = api.tweet(tweets[idx]['text'] + tweets[idx]['url'])
 
                 messages.append('Tweeted ID %s, ' %resp.id)
             else:
