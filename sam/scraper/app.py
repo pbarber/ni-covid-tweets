@@ -1,6 +1,7 @@
 import json
 import datetime
 import re
+import os
 
 import requests
 from bs4 import BeautifulSoup
@@ -84,10 +85,10 @@ def check_for_r_files(s3client, bucket, previous):
 def check_doh(secret, s3, notweet, mode):
     if mode=='dd':
         indexkey = secret['doh-dd-index']
-        lambdaname = 'ni-covid-tweets-NICOVIDTweeter-7GUXQLKTJDEK'
+        lambdaname = os.getenv('TWEETER_LAMBDA')
     else:
         indexkey = secret['doh-r-index']
-        lambdaname = 'ni-covid-tweets-NICOVIDRTweeter-1D5BES9FN6F5B'
+        lambdaname = os.getenv('R_TWEETER_LAMBDA')
 
     # Get the previous data file list from S3
     status = S3_scraper_index(s3, secret['bucketname'], indexkey)
@@ -241,7 +242,7 @@ def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
         print(chosen)
         if not notweet:
             print('Launching vaccine tweeter')
-            launch_lambda_async('ni-covid-tweets-NICOVIDVaccineTweeter-1Q5CK6FJHAEOY',chosen)
+            launch_lambda_async(os.getenv('VACCINE_TWEETER_LAMBDA'),chosen)
             message += ', and launched vaccine tweet lambda'
 
     return(message)
