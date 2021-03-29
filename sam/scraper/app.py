@@ -106,10 +106,10 @@ def check_doh(secret, s3, notweet, mode):
         message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
 
         # If the most recent file has changed then tweet
-        added = [c['index'] for c in changes if c['change'] == 'added']
-        if not notweet and len(added) > 0:
+        totweet = [c['index'] for c in changes if (c['change'] == 'added') or (c['index'] == 0)]
+        if not notweet and (0 in totweet):
             print('Launching %s tweeter' %mode)
-            launch_lambda_async(lambdaname,[current[a] for a in added])
+            launch_lambda_async(lambdaname,[current[a] for a in totweet])
             message += ', and launched %s tweet lambda' %mode
     else:
         message = 'Did nothing'
