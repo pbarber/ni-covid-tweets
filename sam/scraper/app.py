@@ -37,7 +37,7 @@ def check_file_list_against_previous(current, previous):
             previous.insert(0, e)
         elif ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
             changes.append({'index': previous.index(match), 'change': 'modified'})
-            previous[changes[-1]]['index'] = e
+            previous[changes[-1]['index']] = e
     return previous, changes
 
 def upload_changes_to_s3(s3client, bucket, dirname, index, changes, fileext):
