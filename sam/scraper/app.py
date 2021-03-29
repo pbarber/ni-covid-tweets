@@ -33,19 +33,19 @@ def check_file_list_against_previous(current, previous):
         match = next((p for p in previous if p["filedate"] == e["filedate"]), None)
         if match is None:
             changes = [c+1 for c in changes]
-            changes.append(0)
+            changes.append({'index': 0, 'change': 'added'})
             previous.insert(0, e)
         elif ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
-            changes.append(previous.index(match))
-            previous[changes[-1]] = e
+            changes.append({'index': previous.index(match), 'change': 'modified'})
+            previous[changes[-1]]['index'] = e
     return previous, changes
 
 def upload_changes_to_s3(s3client, bucket, dirname, index, changes, fileext):
     for change in changes:
-        e = index[change]
+        e = index[change['index']]
         keyname = "%s/%s/%s-%s.%s" %(dirname,e['filedate'],e['modified'].replace(':','_'),e['length'],fileext)
         s3client.put_object(Bucket=bucket, Key=keyname, Body=get_url(e['url'],'content'))
-        index[change]['keyname'] = keyname
+        index[change['index']]['keyname'] = keyname
     return index
 
 def check_for_dd_files(s3client, bucket, previous, files_to_check):
@@ -106,9 +106,10 @@ def check_doh(secret, s3, notweet, mode):
         message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
 
         # If the most recent file has changed then tweet
-        if not notweet and (0 in changes):
+        added = [c['index'] for c in changes if c['change'] == 'added']
+        if not notweet and len(added) > 0:
             print('Launching %s tweeter' %mode)
-            launch_lambda_async(lambdaname,current[0])
+            launch_lambda_async(lambdaname,[current[a] for a in added])
             message += ', and launched %s tweet lambda' %mode
     else:
         message = 'Did nothing'
