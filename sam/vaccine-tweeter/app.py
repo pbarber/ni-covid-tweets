@@ -4,12 +4,16 @@ import datetime
 
 import boto3
 import pandas
-import tweepy
 
 from shared import S3_scraper_index
+from twitter_shared import TwitterAPI
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
+
+green_block = '\u25A0'
+white_block = '\u2B1A'
+black_block = '\u25A1'
 
 def lambda_handler(event, context):
     # Get the secret
@@ -49,20 +53,52 @@ Source: {source}'''.format(
     source=event['Source']
     )
 
-    if event.get('notweet') is not True:
-        auth = tweepy.OAuthHandler(secret['twitter_apikey'], secret['twitter_apisecretkey'])
-        auth.set_access_token(secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+    blocks = ['','','','']
+    for i in range(20):
+        if (i*5)+5 < event['Second Doses pc']:
+            blocks[i//5] += green_block
+        elif (i*5)+5 < event['First Doses pc']:
+            blocks[i//5] += white_block
+        else:
+            blocks[i//5] += black_block
+    tweet2 = '''Proportion over 18s vaccinated in NI:
 
-        api = tweepy.API(auth)
-        resp = api.update_status(tweet)
+{blocks0}
+{blocks1}
+{blocks2}
+{blocks3}
 
-        for i in range(len(index)):
-            if index[i]['Last Updated'] == event['Last Updated']:
-                index[i]['tweet'] = resp.id
-                break
-        status.put_dict(index)
+One block is one person in 20
 
-        message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
+{green} - 2nd dose received
+{white} - 1st dose received
+{black} - no doses'''.format(
+    blocks0=blocks[0],
+    blocks1=blocks[1],
+    blocks2=blocks[2],
+    blocks3=blocks[3],
+    green=green_block,
+    white=white_block,
+    black=black_block
+)
+
+    print(tweet2)
+
+    if (event.get('tweet2test') is True) or (event.get('notweet') is not True):
+        api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+        if event.get('notweet') is not True:
+            resp = api.tweet(tweet)
+
+            for i in range(len(index)):
+                if index[i]['Last Updated'] == event['Last Updated']:
+                    index[i]['tweet'] = resp.id
+                    break
+            status.put_dict(index)
+
+            message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
+        elif event.get('tweet2test') is True:
+            resp = api.dm(secret['twitter_dmaccount'], tweet2)
+            message = 'Sent test DM'
     else:
         print(tweet)
         message = 'Did not tweet'
