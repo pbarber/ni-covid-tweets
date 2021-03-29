@@ -26,6 +26,11 @@ Resources:
           Type: Schedule
           Properties:
             Schedule: rate(10 minutes)
+      Environment:
+        Variables:
+          TWEETER_LAMBDA: !Sub ${NICOVIDTweeter.Arn}
+          VACCINE_TWEETER_LAMBDA: !Sub ${NICOVIDVaccineTweeter.Arn}
+          R_TWEETER_LAMBDA: !Sub ${NICOVIDRTweeter.Arn}
   NICOVIDTweeter:
     Type: AWS::Serverless::Function
     Properties:
