@@ -2,6 +2,7 @@ import json
 import datetime
 import re
 import os
+import logging
 
 import requests
 from bs4 import BeautifulSoup
@@ -221,8 +222,14 @@ def check_phe(bucketname, indexkey, s3):
 
 def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
 
-    phe, phechange = check_phe(bucketname, pheindexkey, s3)
-    hsc, hscchange = check_hscni(bucketname, hscniindexkey, s3)
+    try:
+        phe, phechange = check_phe(bucketname, pheindexkey, s3)
+    except:
+        logging.exception('Caught exception accessing PHE vaccine data')
+    try:
+        hsc, hscchange = check_hscni(bucketname, hscniindexkey, s3)
+    except:
+        logging.exception('Caught exception accessing HSCNI vaccine data')
 
     # If there has been a change, then tweet
     message = 'Did nothing'
@@ -258,9 +265,18 @@ def lambda_handler(event, context):
 
     # Run the scraper
     messages = []
-    messages.append(check_doh(secret, s3, event.get('tests-notweet', False), 'dd'))
-    messages.append(check_doh(secret, s3, event.get('r-notweet', False), 'r'))
-    messages.append(check_vaccine(secret['bucketname'], secret['phe-vacc-index'], secret['hscni-vacc-index'], s3, event.get('vacc-notweet', False)))
+    try:
+        messages.append(check_doh(secret, s3, event.get('tests-notweet', False), 'dd'))
+    except:
+        logging.exception('Caught exception accessing DOH daily data')
+    try:
+        messages.append(check_doh(secret, s3, event.get('r-notweet', False), 'r'))
+    except:
+        logging.exception('Caught exception accessing DOH R number')
+    try:
+        messages.append(check_vaccine(secret['bucketname'], secret['phe-vacc-index'], secret['hscni-vacc-index'], s3, event.get('vacc-notweet', False)))
+    except:
+        logging.exception('Caught exception accessing vaccine data')
 
     return {
         "statusCode": 200,
