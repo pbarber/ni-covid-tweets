@@ -95,7 +95,7 @@ One block is one person in 20
 
             message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
 
-            resp = api.tweet(tweet2, 1376514079985172481)
+            resp = api.tweet(tweet2, resp.id)
 
             message = 'Tweeted reply ID %s' %resp.id
         elif event.get('tweet2test') is True:
