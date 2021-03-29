@@ -1,9 +1,35 @@
-{
-    "url": "https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-260321.xlsx",
-    "modified": "2021-03-26T14:07:34",
-    "length": 2066871,
-    "filedate": "2021-03-26",
-    "keyname": "DoH-DD/2021-03-26/2021-03-26T14_07_34-2066871.xlsx",
-    "notweet": true
-}
-
+[
+    {
+        "url": "https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-280321.xlsx",
+        "modified": "2021-03-28T13:08:20",
+        "length": 2072666,
+        "filedate": "2021-03-28",
+        "keyname": "DoH-DD/2021-03-28/2021-03-28T13_08_20-2072666.xlsx",
+        "notweet": true
+    },
+    {
+        "url": "https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-270321.xlsx",
+        "modified": "2021-03-28T13:06:49",
+        "length": 2074407,
+        "filedate": "2021-03-27",
+        "keyname": "DoH-DD/2021-03-27/2021-03-28T13_06_49-2074407.xlsx",
+        "notweet": true
+    },
+    {
+        "url": "https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-260321.xlsx",
+        "modified": "2021-03-26T14:07:34",
+        "length": 2066871,
+        "filedate": "2021-03-26",
+        "keyname": "DoH-DD/2021-03-26/2021-03-26T14_07_34-2066871.xlsx",
+        "notweet": true
+    },
+    {
+        "url": "https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-250321.xlsx",
+        "modified": "2021-03-25T14:14:54",
+        "length": 1751042,
+        "filedate": "2021-03-25",
+        "keyname": "DoH-DD/2021-03-25/2021-03-25T14_14_54-1751042.xlsx",
+        "tweet": 1375089785430228998,
+        "notweet": true
+    }
+]
