@@ -42,7 +42,7 @@ Resources:
       CodeUri: vaccine-tweeter/
       Handler: app.lambda_handler
       Runtime: python3.8
-      Timeout: 10
+      Timeout: 60
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
         MaximumRetryAttempts: 0
