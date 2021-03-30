@@ -34,9 +34,9 @@ def lambda_handler(event, context):
 \u2022 {f_24:,} ({pct_f:.1%}) first doses
 \u2022 {s_24:,} ({pct_s:.1%}) second doses
 
-{total:,} total vaccine doses
-\u2022 {total_f:,} total first doses ({pop_f}% of NI adult population)
-\u2022 {total_s:,} total second doses ({pop_s}% of NI adult population)
+{total:,} total doses
+\u2022 {total_f:,} total first doses ({pop_f}% of NI adults)
+\u2022 {total_s:,} total second doses ({pop_s}% of NI adults)
 
 {source}'''.format(
     doses_24=event['First Doses Registered'] + event['Second Doses Registered'],
