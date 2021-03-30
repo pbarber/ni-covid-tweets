@@ -1,14 +1,14 @@
 {
-    "Total Doses": 855488,
-    "Last 24 Hours": 9067,
-    "Total First Doses": 730471,
-    "Total Second Doses": 125017,
-    "First Doses Registered": 3882,
-    "Second Doses Registered": 1565,
-    "First Doses pc": 50.3,
-    "Second Doses pc": 8.6,
-    "Last Updated": "2021-03-28",
-    "notweet": true,
+    "Total Doses": 872751,
+    "Last 24 Hours": 7718,
+    "Total First Doses": 740729,
+    "Total Second Doses": 132022,
+    "Last Updated": "2021-03-29",
+    "First Doses pc": 51.0,
+    "Second Doses pc": 9.1,
+    "notweet": false,
     "tweet2test": false,
-    "Source": "HSCNI"
+    "Source": "HSCNI",
+    "First Doses Registered": 10258,
+    "Second Doses Registered": 7005
 }
