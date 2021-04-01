@@ -1,7 +1,6 @@
 import json
 
 import boto3
-import requests
 
 class S3_scraper_index:
     def __init__(self, client, bucketname, keyname):
@@ -28,8 +27,8 @@ def launch_lambda_async(functionname, payload):
         Payload=json.dumps(payload)
     )
 
-def get_url(url, format):
-    resp = requests.get(url)
+def get_url(session, url, format):
+    resp = session.get(url)
     resp.raise_for_status()
     if format=='text':
         return(resp.text)

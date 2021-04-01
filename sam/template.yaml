@@ -31,6 +31,7 @@ Resources:
           TWEETER_LAMBDA: !Sub ${NICOVIDTweeter.Arn}
           VACCINE_TWEETER_LAMBDA: !Sub ${NICOVIDVaccineTweeter.Arn}
           R_TWEETER_LAMBDA: !Sub ${NICOVIDRTweeter.Arn}
+          NISRA_TWEETER_LAMBDA: !Sub ${NICOVIDNISRATweeter.Arn}
   NICOVIDTweeter:
     Type: AWS::Serverless::Function
     Properties:
@@ -55,7 +56,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
-      Timeout: 30
+      Timeout: 60
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
         MaximumRetryAttempts: 0
@@ -63,3 +64,13 @@ Resources:
       DockerTag: textract-v2
       DockerContext: ./
       Dockerfile: r-tweeter/Dockerfile
+  NICOVIDNISRATweeter:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: nisra-tweeter/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 60
+      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
