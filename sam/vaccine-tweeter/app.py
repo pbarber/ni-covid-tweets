@@ -55,9 +55,9 @@ def lambda_handler(event, context):
 
     blocks = ['','','','']
     for i in range(20):
-        if (i*5)+5 < event['Second Doses pc']:
+        if (i*5)+5 <= event['Second Doses pc']:
             blocks[i//5] += green_block
-        elif (i*5)+5 < event['First Doses pc']:
+        elif (i*5)+5 <= event['First Doses pc']:
             blocks[i//5] += white_block
         else:
             blocks[i//5] += black_block
