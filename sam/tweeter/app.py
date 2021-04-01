@@ -115,7 +115,7 @@ def lambda_handler(event, context):
                     donottweet.append(i)
 
     messages = []
-    for idx in range(len(tweets)):
+    for idx in reversed(range(len(tweets))):
         if tweets[idx].get('notweet') is not True:
             if (idx not in donottweet):
                 api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
