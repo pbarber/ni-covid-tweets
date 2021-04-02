@@ -44,22 +44,28 @@ def lambda_handler(event, context):
         # Check against previous day's reports
         status = S3_scraper_index(s3, secret['bucketname'], secret['nisra-deaths-index'])
         index = status.get_dict()
-        tweet = '''{deaths:,} deaths registered in week ending {date}
-\u2022 {hospitals:,} in hospitals
-\u2022 {care:,} in care homes
-\u2022 {hospices:,} in hospices
-\u2022 {home:,} at home
-
-Deaths include any death where Coronavirus or Covid-19 (suspected or confirmed) was mentioned anywhere on the death certificate.
+        if latest['Total'] == 0:
+            tweet = '''No deaths registered in Northern Ireland, week ended {date}
 
 '''.format(
-            date=latest['date'].strftime('%A %-d %B %Y'),
-            deaths=int(latest['Total']),
-            hospitals=int(latest['Hospital']),
-            care=int(latest['Care Home']),
-            hospices=int(latest['Hospice']),
-            home=int(latest['Home'])
-        )
+                date=latest['date'].strftime('%A %-d %B %Y'),
+            )
+        else:
+            if latest['Total'] == 1:
+                tweet = '''One death registered in Northern Ireland, week ended {date}, in:
+'''.format(
+                    date=latest['date'].strftime('%A %-d %B %Y')
+                )
+            else:
+                tweet = '''{deaths:,} deaths registered in Northern Ireland, week ended {date}, in:
+'''.format(
+                    date=latest['date'].strftime('%A %-d %B %Y'),
+                    deaths=int(latest['Total'])
+                )
+            for name in ['Hospital', 'Care Home', 'Hospice', 'Home', 'Other']:
+                if latest[name] > 0:
+                    tweet += '\u2022 %s: %s\n' %(name, int(latest[name]))
+            tweet += '\n'
 
         tweets.append({'text': tweet, 'url': change['url'], 'notweet': change.get('notweet'), 'filedate': change['filedate']})
 
