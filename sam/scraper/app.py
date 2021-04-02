@@ -240,9 +240,11 @@ def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
     try:
         phe, phechange = check_phe(bucketname, pheindexkey, s3)
     except:
+        phechange = False
         logging.exception('Caught exception accessing PHE vaccine data')
     try:
         hsc, hscchange = check_hscni(bucketname, hscniindexkey, s3)
+        hscchange = False
     except:
         logging.exception('Caught exception accessing HSCNI vaccine data')
 
