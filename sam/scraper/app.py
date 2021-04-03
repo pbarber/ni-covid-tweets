@@ -244,8 +244,8 @@ def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
         logging.exception('Caught exception accessing PHE vaccine data')
     try:
         hsc, hscchange = check_hscni(bucketname, hscniindexkey, s3)
-        hscchange = False
     except:
+        hscchange = False
         logging.exception('Caught exception accessing HSCNI vaccine data')
 
     # If there has been a change, then tweet
