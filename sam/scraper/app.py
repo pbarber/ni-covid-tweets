@@ -33,18 +33,29 @@ def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y'):
                     files.append({'url': a['href'],'filedate': filedate.date().isoformat()})
                 if len(files)>=number:
                     break
-        if len(files)>=number:
+        if (number > 0) and (len(files)>=number):
             break
     return files
 
 def check_file_list_against_previous(current, previous):
     changes = []
+    maxdate = '1970-01-01'
+    for i in range(len(previous)):
+        if previous[i]['filedate'] > maxdate:
+            maxdate = previous[i]['filedate']
     for e in reversed(current):
         match = next((p for p in previous if p["filedate"] == e["filedate"]), None)
-        if match is None:
-            changes = [c+1 for c in changes]
+        if match is None and (e['filedate'] > maxdate):
+            # If a new, later date
+            for i in range(len(changes)):
+                changes[i]['index'] = changes[i]['index']+1
             changes.append({'index': 0, 'change': 'added'})
             previous.insert(0, e)
+        elif match is None:
+            # If a new, older date
+            print('older: %s' %e['filedate'])
+            changes.append({'index': len(previous), 'change': 'added'})
+            previous.append(e)
         elif 'modified' in match and ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
             changes.append({'index': previous.index(match), 'change': 'modified'})
             previous[changes[-1]['index']] = e
@@ -62,21 +73,24 @@ def upload_changes_to_s3(s3client, bucket, dirname, index, changes, fileext):
 def check_for_dd_files(s3client, bucket, previous, files_to_check):
     session = requests.Session()
     # Attempt to pull this month's list of daily data publications
-    today = datetime.datetime.today()
-    url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(today.strftime("%B").lower(),today.year)
     excels = []
-    try:
-        excels.extend(extract_doh_file_list(get_url(session, url, 'text'), files_to_check, r'-(\d{6}).*\.xlsx$'))
-    except requests.exceptions.HTTPError as err:
-        if err.response.status_code == 404:
-            print('Failed to get latest month from %s, rolling back to previous month' %url)
-        else:
-            raise err
-    # Pull last month's as well, if we need to, to ensure we always have N days of data checked
-    if len(excels) <= files_to_check:
-        last_month = today.replace(day=1) - datetime.timedelta(days=1)
-        url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(last_month.strftime("%B").lower(),last_month.year)
-        excels.extend(extract_doh_file_list(get_url(session, url, 'text'), files_to_check-len(excels), r'-(\d{6}).*\.xlsx$'))
+    date_to_try = datetime.datetime.today()
+    # Pull last month's as well, if we need to, to ensure we always have N days of data checked, or just get everything
+    while (len(excels) < files_to_check) or ((files_to_check == 0)):
+        url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(date_to_try.strftime("%B").lower(),date_to_try.year)
+        print(url)
+        try:
+            excels.extend(extract_doh_file_list(get_url(session, url, 'text'), files_to_check-len(excels), r'-(\d{6}).*\.xlsx$'))
+        except requests.exceptions.HTTPError as err:
+            if err.response.status_code == 404:
+                if len(excels) == 0:
+                    print('Failed to get latest month from %s, rolling back to previous month' %url)
+                else:
+                    print('Failed to get data from %s, stopping trying' %url)
+                    break
+            else:
+                raise err
+        date_to_try = date_to_try.replace(day=1) - datetime.timedelta(days=1)
     # Merge the new data into the previous list and detect changes
     index, changes = check_file_list_against_previous(excels, previous)
     # Upload the changed files to s3
@@ -234,6 +248,19 @@ def check_phe(bucketname, indexkey, s3):
 
     return previous[0], change
 
+def check_symptoms():
+    url = 'https://services-eu1.arcgis.com/CbFuxzn9jT2gu2G1/arcgis/rest/services/Prod_Symptoms_By_Hex_Tess_All_Public_View/FeatureServer/0/query'
+    formdata = {
+        "f": "json",
+        "groupByFieldsForStatistics": "CAST(EXTRACT(YEAR FROM DateOfReport + (CASE  WHEN DateOfReport BETWEEN timestamp '2021-03-04 00:00:00' AND timestamp '2021-03-28 00:59:59' THEN -INTERVAL '-1:59:59' HOUR TO SECOND WHEN DateOfReport BETWEEN timestamp '2021-03-28 01:00:00' AND timestamp '2021-04-01 00:00:00' THEN +INTERVAL '0:59:59' HOUR TO SECOND END)) AS VARCHAR(4)) || '-' || CAST(EXTRACT(MONTH FROM DateOfReport + (CASE  WHEN DateOfReport BETWEEN timestamp '2021-03-04 00:00:00' AND timestamp '2021-03-28 00:59:59' THEN -INTERVAL '-1:59:59' HOUR TO SECOND WHEN DateOfReport BETWEEN timestamp '2021-03-28 01:00:00' AND timestamp '2021-04-01 00:00:00' THEN +INTERVAL '0:59:59' HOUR TO SECOND END)) AS VARCHAR(2)) || '-' || CAST(EXTRACT(DAY FROM DateOfReport + (CASE  WHEN DateOfReport BETWEEN timestamp '2021-03-04 00:00:00' AND timestamp '2021-03-28 00:59:59' THEN -INTERVAL '-1:59:59' HOUR TO SECOND WHEN DateOfReport BETWEEN timestamp '2021-03-28 01:00:00' AND timestamp '2021-04-01 00:00:00' THEN +INTERVAL '0:59:59' HOUR TO SECOND END)) AS VARCHAR(2))",
+        "outFields": "OBJECTID,ChecksToday,DateOfReport",
+        "outStatistics": "[{\"onStatisticField\":\"ChecksToday\",\"outStatisticFieldName\":\"value\",\"statisticType\":\"sum\"}]",
+        "resultType": "standard",
+        "returnGeometry": "false",
+        "spatialRel": "esriSpatialRelIntersects",
+        "where": "(DateOfReport BETWEEN timestamp '2021-03-04 00:00:00' AND CURRENT_TIMESTAMP) AND ((DateOfReport BETWEEN timestamp '2021-03-04 00:00:00' AND timestamp '2021-03-28 00:59:59' OR DateOfReport BETWEEN timestamp '2021-03-28 01:00:00' AND timestamp '2021-04-01 00:00:00'))"
+    }
+    print('POST %s to %s' %(formdata,url))
 
 def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
 
@@ -321,6 +348,25 @@ def check_nisra(secret, s3, notweet):
 
     return message
 
+def get_all_doh(secret, s3):
+    indexkey = secret['doh-dd-index']
+
+    # Get the previous data file list from S3
+    status = S3_scraper_index(s3, secret['bucketname'], indexkey)
+    previous = status.get_dict()
+    previous = sorted(previous, key=lambda k: k['filedate'], reverse=True)
+
+    # Check the DoH site for file changes
+    current, changes = check_for_dd_files(s3, secret['bucketname'], previous, 0)
+
+    # Write any changes back to S3
+    if len(changes) > 0:
+        status.put_dict(current)
+        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
+    else:
+        message = 'Did nothing'
+
+    return message
 
 def lambda_handler(event, context):
     # Get the secret
@@ -331,24 +377,27 @@ def lambda_handler(event, context):
     # Set up S3 client
     s3 = boto3.client('s3')
 
-    # Run the scraper
     messages = []
-    try:
-        messages.append(check_doh(secret, s3, event.get('tests-notweet', False), 'dd'))
-    except:
-        logging.exception('Caught exception accessing DOH daily data')
-    try:
-        messages.append(check_doh(secret, s3, event.get('r-notweet', False), 'r'))
-    except:
-        logging.exception('Caught exception accessing DOH R number')
-    try:
-        messages.append(check_vaccine(secret['bucketname'], secret['phe-vacc-index'], secret['hscni-vacc-index'], s3, event.get('vacc-notweet', False)))
-    except:
-        logging.exception('Caught exception accessing vaccine data')
-    try:
-        messages.append(check_nisra(secret, s3, event.get('nisra-notweet', False)))
-    except:
-        logging.exception('Caught exception accessing NISRA weekly data')
+    if event.get('get-all-doh-dd'):
+        messages.append(get_all_doh(secret, s3))
+    else:
+        # Run the scraper
+        try:
+            messages.append(check_doh(secret, s3, event.get('tests-notweet', False), 'dd'))
+        except:
+            logging.exception('Caught exception accessing DOH daily data')
+        try:
+            messages.append(check_doh(secret, s3, event.get('r-notweet', False), 'r'))
+        except:
+            logging.exception('Caught exception accessing DOH R number')
+        try:
+            messages.append(check_vaccine(secret['bucketname'], secret['phe-vacc-index'], secret['hscni-vacc-index'], s3, event.get('vacc-notweet', False)))
+        except:
+            logging.exception('Caught exception accessing vaccine data')
+        try:
+            messages.append(check_nisra(secret, s3, event.get('nisra-notweet', False)))
+        except:
+            logging.exception('Caught exception accessing NISRA weekly data')
 
     return {
         "statusCode": 200,
