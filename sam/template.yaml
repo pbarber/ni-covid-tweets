@@ -74,3 +74,13 @@ Resources:
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
         MaximumRetryAttempts: 0
+  NICOVIDTestsCleaner:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: tests-cleaner/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 600
+      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
