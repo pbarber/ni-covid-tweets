@@ -116,18 +116,12 @@ def lambda_handler(event, context):
 
     messages = []
     for idx in reversed(range(len(tweets))):
-        if tweets[idx].get('notweet') is not True:
-            if (idx not in donottweet):
-                api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-                resp = api.tweet(tweets[idx]['text'] + tweets[idx]['url'])
-
-                messages.append('Tweeted ID %s, ' %resp.id)
-
-                last_week = datetime.datetime.strptime(tweets[idx]["filedate"],'%Y-%m-%d').date() - datetime.timedelta(days=7)
-                for report in index:
-                    if (report['filedate'] == last_week.strftime('%Y-%m-%d')) and ('totals' in report):
-                        ip_change = (tweets[idx]['totals']['admissions'] - tweets[idx]['totals']['discharges']) - (report['totals']['admissions'] - report['totals']['discharges'])
-                        tweet = '''{inpatients} inpatients reported:
+        last_week = datetime.datetime.strptime(tweets[idx]["filedate"],'%Y-%m-%d').date() - datetime.timedelta(days=7)
+        tweet2 = None
+        for report in index:
+            if (report['filedate'] == last_week.strftime('%Y-%m-%d')) and ('totals' in report):
+                ip_change = (tweets[idx]['totals']['admissions'] - tweets[idx]['totals']['discharges']) - (report['totals']['admissions'] - report['totals']['discharges'])
+                tweet2 = '''{inpatients} inpatients reported:
 {ip_bullet} {ip_change} {ip_text} than 7 days ago ({admissions} admitted, {discharges} discharged)
 
 {deaths} deaths reported, {deaths_7d} in last 7 days'''.format(
@@ -140,9 +134,16 @@ def lambda_handler(event, context):
     deaths=tweets[idx]['totals']['deaths'] - tweets[idx]['totals']['deaths'],
     deaths_7d=tweets[idx]['totals']['deaths'] - report['totals']['deaths']
 )
-                        resp = api.tweet(tweet, resp.id)
-                        messages[-1] += ('ID %s, ' %resp.id)
-                        break
+                break
+
+        if tweets[idx].get('notweet') is not True:
+            if (idx not in donottweet):
+                api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+                resp = api.tweet(tweets[idx]['text'] + tweets[idx]['url'])
+                messages.append('Tweeted ID %s, ' %resp.id)
+                if tweet2 is not None:
+                    resp = api.tweet(tweet2, resp.id)
+                    messages[-1] += ('ID %s, ' %resp.id)
             else:
                 messages.append('Duplicate found %s, did not tweet, ' %tweets[idx]['filedate'])
 
@@ -159,6 +160,8 @@ def lambda_handler(event, context):
             if (idx not in donottweet):
                 messages.append('Did not tweet')
                 print(tweets[idx]['text'] + tweets[idx]['url'])
+                if tweet2 is not None:
+                    print(tweet2)
             else:
                 messages.append('Duplicate found %s, did not tweet, ' %tweets[idx]['filedate'])
 
