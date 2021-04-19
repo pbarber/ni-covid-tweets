@@ -29,9 +29,13 @@ def lambda_handler(event, context):
     secretobj = sm.get_secret_value(SecretId='ni-covid-tweets')
     secret = json.loads(secretobj['SecretString'])
 
+    # Get the index
+    s3 = boto3.client('s3')
+    status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
+    index = status.get_dict()
+
     tweets = []
     # Download the most recently updated Excel file
-    s3 = boto3.client('s3')
     for change in event:
         obj = s3.get_object(Bucket=secret['bucketname'],Key=change['keyname'])['Body']
         stream = io.BytesIO(obj.read())
@@ -64,30 +68,9 @@ def lambda_handler(event, context):
         }
         print(totals)
 
-        # Check against previous day's reports
-        status = S3_scraper_index(s3, secret['bucketname'], secret['doh-dd-index'])
-        index = status.get_dict()
-    #    previousday = datetime.datetime.strptime(chnage["filedate"],'%Y-%m-%d').date() - datetime.timedelta(days=1)
-    #    match = next((p for p in index if datetime.datetime.strptime(p["filedate"],'%Y-%m-%d').date() == previousday), None)
-    #    if match and 'totals' in match:
-    #        tweet_head = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive registered on {date}'''.format(
-    #            date=latest['Sample_Date'].strftime('%A %-d %B %Y'),
-    #            ind_positive=(totals['ind_positive']-match['totals']['ind_positive']),
-    #            ind_tested=(totals['ind_tested']-match['totals']['ind_tested']),
-    #            pos_rate=(totals['ind_positive']-match['totals']['ind_positive'])/(totals['ind_tested']-match['totals']['ind_tested'])
-    #        )
-    #    else:
-        tweet_head = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive on {date}
-{est} rate since {prev}'''.format(
-            date=latest['Sample_Date'].strftime('%A %-d %B %Y'),
-            ind_positive=latest['INDIVIDUALS TESTED POSITIVE'],
-            ind_tested=latest['ALL INDIVIDUALS TESTED'],
-            pos_rate=latest['pos_rate'],
-            est=est,
-            prev=prev
-        )
-
-        tweet = '''{head}
+        # Build the tweet text
+        tweet = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive on {date}
+{est} rate since {prev}
 
 {pos_rate_7d:.2%} 7-day positivity rate
 {est_7d} since {prev_7d}
@@ -96,7 +79,12 @@ def lambda_handler(event, context):
 {tag_7d} {dif_7d:,} {dir_7d} than preceding 7 days ({pct_7d:.2%})
 
 '''.format(
-            head=tweet_head,
+            date=latest['Sample_Date'].strftime('%A %-d %B %Y'),
+            ind_positive=latest['INDIVIDUALS TESTED POSITIVE'],
+            ind_tested=latest['ALL INDIVIDUALS TESTED'],
+            pos_rate=latest['pos_rate'],
+            est=est,
+            prev=prev,
             pos_rate_7d=latest_7d['rolling_pos_rate'],
             est_7d=est_7d,
             prev_7d=prev_7d,
@@ -105,7 +93,29 @@ def lambda_handler(event, context):
             dir_7d='fewer' if int(round(latest_7d['rolling_7d_change'],0))<0 else 'more',
             dif_7d=int(abs(round(latest_7d['rolling_7d_change'],0))),
             pct_7d=latest_7d['rolling_7d_change']/(latest_7d['rolling_7d_change']+(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7)))
-        tweets.append({'text': tweet, 'url': change['url'], 'notweet': change.get('notweet'), 'totals': totals, 'filedate': change['filedate']})
+
+        # If we have the data for it, build the second tweet
+        last_week = datetime.datetime.strptime(change['filedate'],'%Y-%m-%d').date() - datetime.timedelta(days=7)
+        tweet2 = None
+        for report in index:
+            if (report['filedate'] == last_week.strftime('%Y-%m-%d')) and ('totals' in report):
+                ip_change = (totals['admissions'] - totals['discharges']) - (report['totals']['admissions'] - report['totals']['discharges'])
+                tweet2 = '''{inpatients} inpatients reported:
+{ip_bullet} {ip_change} {ip_text} than 7 days ago ({admissions} admitted, {discharges} discharged)
+
+{deaths} deaths reported, {deaths_7d} in last 7 days'''.format(
+                    inpatients=totals['admissions'] - totals['discharges'],
+                    ip_change=abs(ip_change),
+                    ip_bullet=good_symb if ip_change < 0 else bad_symb,
+                    ip_text='fewer' if ip_change < 0 else 'more',
+                    admissions=totals['admissions'] - report['totals']['admissions'],
+                    discharges=totals['discharges'] - report['totals']['discharges'],
+                    deaths=totals['deaths'] - totals['deaths'],
+                    deaths_7d=totals['deaths'] - report['totals']['deaths']
+                )
+                break
+
+        tweets.append({'text': tweet, 'text2': tweet2, 'url': change['url'], 'notweet': change.get('notweet'), 'totals': totals, 'filedate': change['filedate']})
 
     donottweet = []
     if len(tweets) > 1:
@@ -116,42 +126,23 @@ def lambda_handler(event, context):
 
     messages = []
     for idx in reversed(range(len(tweets))):
-        last_week = datetime.datetime.strptime(tweets[idx]["filedate"],'%Y-%m-%d').date() - datetime.timedelta(days=7)
-        tweet2 = None
-        for report in index:
-            if (report['filedate'] == last_week.strftime('%Y-%m-%d')) and ('totals' in report):
-                ip_change = (tweets[idx]['totals']['admissions'] - tweets[idx]['totals']['discharges']) - (report['totals']['admissions'] - report['totals']['discharges'])
-                tweet2 = '''{inpatients} inpatients reported:
-{ip_bullet} {ip_change} {ip_text} than 7 days ago ({admissions} admitted, {discharges} discharged)
-
-{deaths} deaths reported, {deaths_7d} in last 7 days'''.format(
-    inpatients=tweets[idx]['totals']['admissions'] - tweets[idx]['totals']['discharges'],
-    ip_change=abs(ip_change),
-    ip_bullet=good_symb if ip_change < 0 else bad_symb,
-    ip_text='fewer' if ip_change < 0 else 'more',
-    admissions=tweets[idx]['totals']['admissions'] - report['totals']['admissions'],
-    discharges=tweets[idx]['totals']['discharges'] - report['totals']['discharges'],
-    deaths=tweets[idx]['totals']['deaths'] - tweets[idx]['totals']['deaths'],
-    deaths_7d=tweets[idx]['totals']['deaths'] - report['totals']['deaths']
-)
-                break
-
-        if tweets[idx].get('notweet') is not True:
+        t = tweets[idx]
+        if t.get('notweet') is not True:
             if (idx not in donottweet):
                 api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-                resp = api.tweet(tweets[idx]['text'] + tweets[idx]['url'])
+                resp = api.tweet(t['text'] + t['url'])
                 messages.append('Tweeted ID %s, ' %resp.id)
-                if tweet2 is not None:
-                    resp = api.tweet(tweet2, resp.id)
+                if t['text2'] is not None:
+                    resp = api.tweet(t['text2'], resp.id)
                     messages[-1] += ('ID %s, ' %resp.id)
             else:
-                messages.append('Duplicate found %s, did not tweet, ' %tweets[idx]['filedate'])
+                messages.append('Duplicate found %s, did not tweet, ' %t['filedate'])
 
             # Update the file index
             for i in range(len(index)):
-                if index[i]['filedate'] == tweets[idx]['filedate']:
+                if index[i]['filedate'] == t['filedate']:
                     index[i]['tweet'] = resp.id
-                    index[i]['totals'] = tweets[idx]['totals']
+                    index[i]['totals'] = t['totals']
                     break
             status.put_dict(index)
 
@@ -159,11 +150,11 @@ def lambda_handler(event, context):
         else:
             if (idx not in donottweet):
                 messages.append('Did not tweet')
-                print(tweets[idx]['text'] + tweets[idx]['url'])
-                if tweet2 is not None:
-                    print(tweet2)
+                print(t['text'] + t['url'])
+                if t['text2'] is not None:
+                    print(t['text2'])
             else:
-                messages.append('Duplicate found %s, did not tweet, ' %tweets[idx]['filedate'])
+                messages.append('Duplicate found %s, did not tweet, ' %t['filedate'])
 
     return {
         "statusCode": 200,
