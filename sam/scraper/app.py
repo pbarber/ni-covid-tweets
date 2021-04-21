@@ -346,6 +346,51 @@ def check_nisra(secret, s3, notweet):
 
     return message
 
+def check_for_cta_travel_changes(previous):
+    url = 'https://www.nidirect.gov.uk/articles/coronavirus-covid-19-travel-within-common-travel-area'
+    session = requests.Session()
+    resp = session.head(url)
+    modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
+    current = {
+        'type': 'NI CTA Travel Regulations',
+        'url': url,
+        'modified': modified.isoformat(),
+        'length': int(resp.headers['Content-Length'])
+    }
+    match = next((p for p in previous if p["modified"] == current["modified"]), None)
+    change = False
+    if (match is None) or (match['length'] != current['length']):
+        change = True
+        previous.append(current)
+    return (previous, change)
+
+def check_cta_travel(secret, s3, notweet):
+    indexkey = secret['nidirect-cta-index']
+
+    # Get the previous data file list from S3
+    status = S3_scraper_index(s3, secret['bucketname'], indexkey)
+    previous = status.get_dict()
+
+    # Check the NI Direct site for changes
+    current, changes = check_for_cta_travel_changes(previous)
+
+    # Write any changes back to S3
+    if changes:
+        status.put_dict(current)
+        message = 'Wrote %d items to %s' %(len(current), indexkey)
+
+        if not notweet:
+            print('Launching CTA travel tweeter')
+            launch_lambda_async(os.getenv('GENERIC_TWEETER_LAMBDA'),[current[-1]])
+            message += ', and launched CTA tweet lambda'
+        else:
+            print('Not launching CTA travel tweeter, event would have been:')
+            print([current[-1]])
+    else:
+        message = 'Did nothing'
+
+    return message
+
 def get_all_doh(secret, s3):
     indexkey = secret['doh-dd-index']
 
@@ -394,6 +439,10 @@ def lambda_handler(event, context):
             logging.exception('Caught exception accessing vaccine data')
         try:
             messages.append(check_nisra(secret, s3, event.get('nisra-notweet', False)))
+        except:
+            logging.exception('Caught exception accessing NISRA weekly data')
+        try:
+            messages.append(check_cta_travel(secret, s3, event.get('cta-notweet', False)))
         except:
             logging.exception('Caught exception accessing NISRA weekly data')
 

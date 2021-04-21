@@ -32,6 +32,7 @@ Resources:
           VACCINE_TWEETER_LAMBDA: !Sub ${NICOVIDVaccineTweeter.Arn}
           R_TWEETER_LAMBDA: !Sub ${NICOVIDRTweeter.Arn}
           NISRA_TWEETER_LAMBDA: !Sub ${NICOVIDNISRATweeter.Arn}
+          GENERIC_TWEETER_LAMBDA: !Sub ${NICOVIDGenericTweeter.Arn}
   NICOVIDTweeter:
     Type: AWS::Serverless::Function
     Properties:
@@ -68,6 +69,16 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: nisra-tweeter/
+      Handler: app.lambda_handler
+      Runtime: python3.8
+      Timeout: 120
+      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+  NICOVIDGenericTweeter:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: generic-tweeter/
       Handler: app.lambda_handler
       Runtime: python3.8
       Timeout: 120
