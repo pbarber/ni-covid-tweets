@@ -96,24 +96,35 @@ def lambda_handler(event, context):
 
         # If we have the data for it, build the second tweet
         last_week = datetime.datetime.strptime(change['filedate'],'%Y-%m-%d').date() - datetime.timedelta(days=7)
-        tweet2 = None
+        day_before = datetime.datetime.strptime(change['filedate'],'%Y-%m-%d').date() - datetime.timedelta(days=1)
+        yesterday = None
+        lastweek = None
         for report in index:
             if (report['filedate'] == last_week.strftime('%Y-%m-%d')) and ('totals' in report):
-                ip_change = (totals['admissions'] - totals['discharges']) - (report['totals']['admissions'] - report['totals']['discharges'])
-                tweet2 = '''{inpatients} inpatients reported:
-{ip_bullet} {ip_change} {ip_text} than 7 days ago ({admissions} admitted, {discharges} discharged)
+                lastweek = report
+            elif (report['filedate'] == day_before.strftime('%Y-%m-%d')) and ('totals' in report):
+                yesterday = report
+            if (yesterday is not None) and (lastweek is not None):
+                break
+        tweet2 = None
+        if lastweek is not None:
+            ip_change = (totals['admissions'] - totals['discharges']) - (lastweek['totals']['admissions'] - lastweek['totals']['discharges'])
+            tweet2 = '''{inpatients} inpatients reported:
+{ip_bullet} {ip_change} {ip_text} than 7 days ago ({admissions} admitted, {discharges} discharged)'''.format(
+                inpatients=totals['admissions'] - totals['discharges'],
+                ip_change=abs(ip_change),
+                ip_bullet=good_symb if ip_change < 0 else bad_symb,
+                ip_text='fewer' if ip_change < 0 else 'more',
+                admissions=totals['admissions'] - lastweek['totals']['admissions'],
+                discharges=totals['discharges'] - lastweek['totals']['discharges']
+            )
+            if yesterday is not None:
+                tweet2 += '''
 
 {deaths} deaths reported, {deaths_7d} in last 7 days'''.format(
-                    inpatients=totals['admissions'] - totals['discharges'],
-                    ip_change=abs(ip_change),
-                    ip_bullet=good_symb if ip_change < 0 else bad_symb,
-                    ip_text='fewer' if ip_change < 0 else 'more',
-                    admissions=totals['admissions'] - report['totals']['admissions'],
-                    discharges=totals['discharges'] - report['totals']['discharges'],
-                    deaths=totals['deaths'] - totals['deaths'],
-                    deaths_7d=totals['deaths'] - report['totals']['deaths']
+                    deaths=totals['deaths'] - yesterday['totals']['deaths'],
+                    deaths_7d=totals['deaths'] - lastweek['totals']['deaths']
                 )
-                break
 
         tweets.append({'text': tweet, 'text2': tweet2, 'url': change['url'], 'notweet': change.get('notweet'), 'totals': totals, 'filedate': change['filedate']})
 
