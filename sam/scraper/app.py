@@ -3,6 +3,7 @@ import datetime
 import re
 import os
 import logging
+import hashlib
 
 import requests
 from bs4 import BeautifulSoup
@@ -349,19 +350,18 @@ def check_nisra(secret, s3, notweet):
 def check_for_cta_travel_changes(previous):
     url = 'https://www.nidirect.gov.uk/articles/coronavirus-covid-19-travel-within-common-travel-area'
     session = requests.Session()
-    resp = session.head(url)
-    modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
-    current = {
-        'type': 'NI CTA Travel Regulations',
-        'url': url,
-        'modified': modified.isoformat(),
-        'length': int(resp.headers['Content-Length'])
-    }
-    match = next((p for p in previous if p["modified"] == current["modified"]), None)
+    html = BeautifulSoup(get_url(session,url,'text'),features="html.parser")
+    div = html.find("div", {"class": "field-body"})
+    hashstr = hashlib.md5(div.text.encode('utf-8')).hexdigest()
+    match = next((p for p in previous if p.get("hash",'') == hashstr), None)
     change = False
-    if (match is None) or (match['length'] != current['length']):
+    if match is None:
         change = True
-        previous.append(current)
+        previous.append({
+            'type': 'NI CTA Travel Regulations',
+            'url': url,
+            'hash': hashstr
+        })
     return (previous, change)
 
 def check_cta_travel(secret, s3, notweet):

@@ -17,9 +17,8 @@ def lambda_handler(event, context):
     for change in event:
         tweet = '''{type}
 
-Change detected in {url} at {modified}'''.format(
+Change detected in {url}'''.format(
             url=change['url'],
-            modified=change['modified'],
             type=change['type']
         )
         if change.get('notweet') is not True:
