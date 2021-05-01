@@ -39,7 +39,8 @@ def lambda_handler(event, context):
 
         # Get the latest dates with values for tests and rolling
         df['date'] = pandas.to_datetime(df['Week Ending'], format='%d/%m/%Y')
-        latest = df.iloc[df['date'].idxmax()]
+        df.sort_values('date', inplace=True)
+        latest = df.iloc[-1]
 
         # Check against previous day's reports
         status = S3_scraper_index(s3, secret['bucketname'], secret['nisra-deaths-index'])
@@ -66,6 +67,17 @@ def lambda_handler(event, context):
                 if latest[name] > 0:
                     tweet += '\u2022 %s: %s\n' %(name, int(latest[name]))
             tweet += '\n'
+        if len(df) > 1:
+            prev = df.iloc[-2]
+            diff = latest['Total'] - prev['Total']
+            tweet += '''{symb} {diff} {comp} than previous week
+
+'''.format(
+                symb=good_symb if diff < 0 else bad_symb,
+                diff=abs(int(diff)),
+                comp='fewer' if diff < 0 else 'more'
+            )
+
 
         tweets.append({'text': tweet, 'url': change['url'], 'notweet': change.get('notweet'), 'filedate': change['filedate']})
 
