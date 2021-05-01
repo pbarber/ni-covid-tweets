@@ -109,9 +109,10 @@ def lambda_handler(event, context):
         tweet2 = None
         if lastweek is not None:
             ip_change = (totals['admissions'] - totals['discharges']) - (lastweek['totals']['admissions'] - lastweek['totals']['discharges'])
-            tweet2 = '''{inpatients} inpatients reported:
+            tweet2 = '''{inpatients} inpatient{ips} reported:
 {ip_bullet} {ip_change} {ip_text} than 7 days ago ({admissions} admitted, {discharges} discharged)'''.format(
                 inpatients=totals['admissions'] - totals['discharges'],
+                ips='s' if (totals['admissions'] - totals['discharges']) else '',
                 ip_change=abs(ip_change),
                 ip_bullet=good_symb if ip_change < 0 else bad_symb,
                 ip_text='fewer' if ip_change < 0 else 'more',
@@ -121,8 +122,9 @@ def lambda_handler(event, context):
             if yesterday is not None:
                 tweet2 += '''
 
-{deaths} deaths reported, {deaths_7d} in last 7 days'''.format(
+{deaths} death{ds} reported, {deaths_7d} in last 7 days'''.format(
                     deaths=totals['deaths'] - yesterday['totals']['deaths'],
+                    ds='s' if ((totals['deaths'] - yesterday['totals']['deaths']) != 1) else '',
                     deaths_7d=totals['deaths'] - lastweek['totals']['deaths']
                 )
 
