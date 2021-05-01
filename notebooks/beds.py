@@ -3,6 +3,8 @@
 import pandas
 import altair
 
+altair.data_transformers.disable_max_rows()
+
 # %% [markdown]
 # ## BHSCT FOI data
 #
@@ -168,7 +170,7 @@ altair.Chart(
     color='Trust'
 )
 
-# %% Plot available ICU beds on a pre-COVID day
+# %% Plot available ICU beds by Trust on a pre-COVID day
 altair.Chart(
     (all_foi_weekly[all_foi_weekly['Week beginning']=='2020-01-03'].groupby(['Trust','Hospital']).sum() / 7).reset_index()
 ).mark_bar().encode(
@@ -195,6 +197,15 @@ altair.Chart(
     color='Trust'
 )
 
+# %%
+altair.Chart(
+    all_foi_weekly.groupby(['Week beginning', 'Trust']).sum().reset_index()
+).mark_area().encode(
+    x=altair.X(field='Week beginning', type='temporal'),
+    y=altair.Y(field='ICU Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Available Bed Days')),
+    color='Trust'
+)
+
 # %% Trim the data to when data from all 5 trusts is available
 all_foi_weekly_trimmed = all_foi_weekly[
     (all_foi_weekly['Week beginning'] >= all_foi_weekly[all_foi_weekly['Trust']=='SHSCT']['Week beginning'].min())
@@ -208,6 +219,48 @@ altair.Chart(
     x=altair.X(field='Week beginning', type='temporal'),
     y=altair.Y(field='ICU Occupied', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Occupied Bed Days')),
     color='Trust'
+)
+
+# %%
+cc_hospitals = ['Altnagelvin Hospital','Antrim Area Hospital', 'Belfast City Hospital', 'Causeway Hospital', 'Craigavon Area Hospital', 'Mater Infirmorum Hospital', 'Royal Belfast Hospital for Sick Children', 'Royal Victoria Hospital', 'South West Acute Hospital', 'Ulster Hospital']
+
+# %%
+altair.Chart(
+    all_foi_weekly_trimmed.groupby(['Week beginning', 'Trust']).sum().reset_index()
+).mark_area().encode(
+    x=altair.X(field='Week beginning', type='temporal'),
+    y=altair.Y(field='ICU Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Available Bed Days')),
+    color='Trust'
+)
+
+# %%
+foi_icu_hospital = (all_foi_weekly_trimmed[all_foi_weekly_trimmed['Hospital'].isin(cc_hospitals)].groupby(['Week beginning', 'Hospital']).sum() / 7)[['ICU Occupied','ICU Available']].reset_index().melt(id_vars=['Hospital','Week beginning'],var_name=['Status'])
+altair.Chart(
+    foi_icu_hospital[foi_icu_hospital['Week beginning'] < foi_icu_hospital['Week beginning'].max()]
+).mark_line().encode(
+    x=altair.X(field='Week beginning', type='temporal'),
+    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Beds')),
+    color='Status',
+    row=altair.Row('Hospital',type='ordinal')
+).properties(
+    height=200
+).resolve_scale(
+    y='independent'
+)
+
+# %%
+foi_icu_trust = (all_foi_weekly_trimmed.groupby(['Week beginning', 'Trust']).sum() / 7)[['ICU Occupied','ICU Available']].reset_index().melt(id_vars=['Trust','Week beginning'],var_name=['Status'])
+altair.Chart(
+    foi_icu_trust[(foi_icu_trust['Week beginning'] < foi_icu_trust['Week beginning'].max()) & (foi_icu_trust['Week beginning'] > foi_icu_trust['Week beginning'].min())]
+).mark_line().encode(
+    x=altair.X(field='Week beginning', type='temporal'),
+    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Beds')),
+    color=altair.Color('Status',title=None),
+    row=altair.Row('Trust',type='ordinal')
+).properties(
+    height=90
+).resolve_scale(
+    y='independent'
 )
 
 # %% [markdown]
@@ -261,6 +314,32 @@ all_weekly = (all_weekly.set_index(['Trust','Week beginning']) / 7.0).reset_inde
 all_weekly['Year'] = all_weekly['Week beginning'].dt.year
 all_weekly['Week'] = all_weekly['Week beginning'].dt.isocalendar().week
 all_weekly = all_weekly[all_weekly['Week beginning'] < all_weekly['Week beginning'].max()]
+
+# %%
+all_icu = (all_weekly.groupby(['Week beginning','Week','Year']).sum())[['ICU Occupied','ICU Available']].reset_index().melt(id_vars=['Week beginning','Week','Year'],var_name=['Status'])
+altair.Chart(
+    all_icu
+).mark_line().encode(
+    x=altair.X(r'monthdate(Week beginning):T', axis=altair.Axis(title='Week of year')),
+    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Beds')),
+    color=altair.Color('Status',title=None),
+    row=altair.Row('Year',type='ordinal')
+).properties(
+    height=90
+)
+
+# %%
+all_gen = (all_weekly.groupby(['Week beginning','Week','Year']).sum())[['Non ICU Occupied','Non ICU Available']].reset_index().melt(id_vars=['Week beginning','Week','Year'],var_name=['Status'])
+altair.Chart(
+    all_gen
+).mark_line().encode(
+    x=altair.X(r'monthdate(Week beginning):T', axis=altair.Axis(title='Week of year')),
+    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='General Beds')),
+    color=altair.Color('Status',title=None),
+    row=altair.Row('Year',type='ordinal')
+).properties(
+    height=90
+)
 
 # %%
 altair.vconcat(*[
