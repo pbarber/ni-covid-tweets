@@ -2,6 +2,7 @@
 import pandas
 import altair
 import numpy
+import datetime
 
 # %% Load data from PHE API and transform it to the right format
 df = pandas.read_csv('https://coronavirus.data.gov.uk/api/v1/data?filters=areaType=nation&structure=%7B%22areaType%22:%22areaType%22,%22areaName%22:%22areaName%22,%22areaCode%22:%22areaCode%22,%22date%22:%22date%22,%22newCasesBySpecimenDate%22:%22newCasesBySpecimenDate%22,%22cumCasesBySpecimenDate%22:%22cumCasesBySpecimenDate%22%7D&format=csv')
@@ -174,7 +175,6 @@ def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
         'HD': 'Halving' if (curve[0] < 0) else 'Doubling',
         "HD_time": abs(numpy.log(2)/curve[0])
     }, index=[0])
-    print(curve)
 
     lobf = altair.Chart(
         tofit
@@ -184,7 +184,11 @@ def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
     ).encode(
         x=altair.X(
             field='Date',
-            type='temporal'
+            type='temporal',
+            axis=altair.Axis(
+                title='Specimen Date',
+                format = ("%-d %b")
+            )
         ),
         y=altair.Y(
             field='result',
@@ -203,46 +207,72 @@ def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
         pct=f'"Daily " + datum.RF + ": " + format(datum.Daily,".1%")',
         pct_wk=f'"Weekly " + datum.RF + ": " + format(datum.Weekly,".1%")',
         hd=f'datum.HD + " time: " + format(datum.HD_time,".1f") + " days"',
-        date=f'"Model: " + datum.Date'
+        date=f'"Trendline mid-point: " + datum.Date'
     )
 
-    return altair.layer(
-        nofit,
-        fit,
-        lobf,
-        labels.mark_text(align='left').encode(
-            x=altair.value(20),
-            y=altair.value(20),
-            text='pct:O'
-        ),
-        labels.mark_text(align='left').encode(
-            x=altair.value(20),
-            y=altair.value(37),
-            text='pct_wk:O'
-        ),
-        labels.mark_text(align='left').encode(
-            x=altair.value(20),
-            y=altair.value(54),
-            text='hd:O'
-        ),
-        labels.mark_text(align='left').encode(
-            x=altair.value(20),
-            y=altair.value(71),
-            text='date:O'
+    return altair.concat(
+        altair.layer(
+            nofit,
+            fit,
+            lobf,
+            labels.mark_text(align='left').encode(
+                x=altair.value(20),
+                y=altair.value(20),
+                text='pct:O'
+            ),
+            labels.mark_text(align='left').encode(
+                x=altair.value(20),
+                y=altair.value(37),
+                text='pct_wk:O'
+            ),
+            labels.mark_text(align='left').encode(
+                x=altair.value(20),
+                y=altair.value(54),
+                text='hd:O'
+            ),
+            labels.mark_text(align='left').encode(
+                x=altair.value(20),
+                y=altair.value(71),
+                text='date:O'
+            ),
+        ).properties(
+            title=altair.TitleParams(
+                'COVID-19 cases in %s' %nation,
+            ),
+            height=384,
+            width=512,
+        )
+    ).properties(
+        title=altair.TitleParams(
+            'https://twitter.com/ni_covid19_data',
+            baseline='bottom',
+            orient='bottom',
+            anchor='end',
+            fontWeight='normal',
+            fontSize=10,
+            dy=10
         ),
     )
 
 # %%
-plot_fit('Northern Ireland', '#076543', 42, 9, 1)
+plt = plot_fit('Northern Ireland', '#076543', 42, 9, 1)
+plt.save('nir-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+plt
 
 # %%
-plot_fit('Wales', '#D30731', 42, 9, 1)
+plt = plot_fit('Wales', '#D30731', 42, 9, 1)
+plt.save('wal-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+plt
 
 # %%
-plot_fit('Scotland', '#005eb8', 42, 9, 1)
+plt = plot_fit('Scotland', '#005eb8', 42, 9, 1)
+plt.save('sco-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+plt
 
 # %%
-plot_fit('England', 'grey', 42, 9, 1)
+plt = plot_fit('England', 'slategrey', 42, 9, 1)
+plt.save('eng-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+plt
 
 # %%
 
