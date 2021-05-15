@@ -4,6 +4,14 @@ import altair
 import numpy
 import datetime
 
+# %% 2019 populations from Fig 3 of https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/bulletins/annualmidyearpopulationestimates/mid2019estimates
+nationpop = pandas.DataFrame([
+    {'Nation': 'Northern Ireland', 'Population': 1893667},
+    {'Nation': 'England', 'Population': 56286961},
+    {'Nation': 'Scotland', 'Population': 5463300},
+    {'Nation': 'Wales', 'Population': 3152879},
+])
+
 # %% Load data from PHE API and transform it to the right format
 df = pandas.read_csv('https://coronavirus.data.gov.uk/api/v1/data?filters=areaType=nation&structure=%7B%22areaType%22:%22areaType%22,%22areaName%22:%22areaName%22,%22areaCode%22:%22areaCode%22,%22date%22:%22date%22,%22newCasesBySpecimenDate%22:%22newCasesBySpecimenDate%22,%22cumCasesBySpecimenDate%22:%22cumCasesBySpecimenDate%22%7D&format=csv')
 df.drop(columns=['areaType','areaCode','cumCasesBySpecimenDate'], inplace=True)
@@ -14,6 +22,8 @@ df = df.reindex(newind)
 df = df.reset_index().melt(id_vars='index', var_name='Nation', value_name='newCasesBySpecimenDate')
 df = df.rename(columns={'index': 'Date'}).sort_values('Date')
 df['New cases 7-day rolling mean'] = df.groupby('Nation').rolling(7, center=True).mean().droplevel(0)
+df = df.merge(nationpop, how='left', left_on='Nation', right_on='Nation', validate='m:1')
+df['Rolling cases per 100k'] = 100000 * (df['New cases 7-day rolling mean'] / df['Population'])
 
 # %%
 covid_timeline = pandas.DataFrame([
@@ -53,57 +63,130 @@ def covid_timeline_base_chart(days=1000):
         )
     )
 
-# %% Plot the change since Christmas for all UK nations
-altair.Chart(
-    df[df['Date']>'2020-12-24']
-).mark_line().encode(
-    x=altair.X(
-        field='Date',
-        type='temporal',
-    ),
-    y=altair.Y(
-        field='New cases 7-day rolling mean',
-        type='quantitative',
-        scale=altair.Scale(
-            type='log'
-        ),
-    ),
-    color=altair.Color(
-        field='Nation',
-        type='nominal',
-        scale=altair.Scale(
-            domain=['England','Scotland','Wales', 'Northern Ireland'],
-            range=['grey', '#005eb8', '#D30731', '#076543']
+# %% Trendline functions
+def plot_multiple_trendlines(df, y, color, y_scale=None, domain=None, range=None):
+    if y_scale == 'log':
+        y_def = altair.Y(
+            field=y,
+            type='quantitative',
+            scale=altair.Scale(
+                type='log'
+            ),
         )
+    else:
+        y_def = altair.Y(
+            field=y,
+            type='quantitative'
+        )
+    if domain is not None:
+        c_def = altair.Color(
+            field=color,
+            type='nominal',
+            scale=altair.Scale(
+                domain=domain,
+                range=range
+            )
+        )
+    else:
+        c_def = altair.Color(
+            field=color,
+            type='nominal'
+        )
+
+    return altair.Chart(
+        df
+    ).mark_line().encode(
+        x=altair.X(
+            field='Date',
+            type='temporal',
+        ),
+        y=y_def,
+        color=c_def
+    ).properties(
+        height=450,
+        width=800
     )
-).properties(
-    height=450,
-    width=800
+
+def plot_single_trendline(df, y, color, y_format=',', y_scale=None, x_axis=None, domain=None, range=None):
+    if y_scale == 'log':
+        y_def = altair.Y(
+            field=y,
+            type='quantitative',
+            axis=altair.Axis(format=y_format),
+            scale=altair.Scale(
+                type='log'
+            ),
+        )
+    else:
+        y_def = altair.Y(
+            field=y,
+            type='quantitative',
+            axis=altair.Axis(format=y_format),
+        )
+
+    return altair.Chart(
+        df
+    ).mark_line(
+        color=color,
+    ).encode(
+        x=altair.X(
+            field='Date',
+            type='temporal',
+            axis=x_axis,
+        ),
+        y=y_def
+    )
+
+# %% Plot the change in cases since Christmas for all UK nations
+plot_multiple_trendlines(
+    df[df['Date']>'2020-12-24'],
+    y='New cases 7-day rolling mean',
+    color='Nation',
+    y_scale='log',
+    domain=['England','Scotland','Wales','Northern Ireland'],
+    range=['grey','#005eb8','#D30731','#076543']
 )
 
-# %% Plot just NI since Christmas
+# %% Plot the change in cases per 100k since Christmas for all UK nations
+plot_multiple_trendlines(
+    df[df['Date']>'2020-12-24'],
+    y='Rolling cases per 100k',
+    color='Nation',
+    y_scale='log',
+    domain=['England','Scotland','Wales','Northern Ireland'],
+    range=['grey','#005eb8','#D30731','#076543']
+)
+
+# %% Plot just NI cases since Christmas
 altair.vconcat(
     *[
         altair.layer(
             covid_timeline_ticks(height=300),
-            altair.Chart(
-                df[(df['Date']>'2020-12-24') & (df['Nation']=='Northern Ireland')]
-            ).mark_line(
+            plot_single_trendline(
+                df[(df['Date']>'2020-12-24') & (df['Nation']=='Northern Ireland')],
+                y='New cases 7-day rolling mean',
                 color='#076543',
-            ).encode(
-                x=altair.X(
-                    field='Date',
-                    type='temporal',
-                    axis=None,
-                ),
-                y=altair.Y(
-                    field='New cases 7-day rolling mean',
-                    type='quantitative',
-                    scale=altair.Scale(
-                        type='log'
-                    ),
-                )
-            ),
+                y_scale='log'
+            )
+        ),
+        covid_timeline_base_chart()
+    ],
+    spacing=0
+).resolve_scale(
+    x='shared'
+)
+
+# %% Plot just NI cases per 100k since Christmas
+altair.vconcat(
+    *[
+        altair.layer(
+            covid_timeline_ticks(height=300),
+            plot_single_trendline(
+                df[(df['Date']>'2020-12-24') & (df['Nation']=='Northern Ireland')],
+                y='Rolling cases per 100k',
+                color='#076543',
+                y_scale='log'
+            )
         ),
         covid_timeline_base_chart()
     ],
@@ -116,12 +199,12 @@ altair.vconcat(
 def fit_exp(curve0, curve1, value):
     return (numpy.exp(curve1) * numpy.exp(curve0 * value))
 
-def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
-    nofit_dates = df[(~df['New cases 7-day rolling mean'].isna()) & (df['Nation']==nation)]['Date'].drop_duplicates().nlargest(totdays+ignoredays).nsmallest(totdays-fitdays)
-    fit_dates = df[(~df['New cases 7-day rolling mean'].isna()) & (df['Nation']==nation)]['Date'].drop_duplicates().nlargest(fitdays+ignoredays).nsmallest(fitdays)
-    ignore_dates= df[(~df['New cases 7-day rolling mean'].isna()) & (df['Nation']==nation)]['Date'].drop_duplicates().nlargest(ignoredays)
+def plot_single_trendline_fit(df, y, y_title, group, groupval, colour, totdays, fitdays, ignoredays=0):
+    nofit_dates = df[(~df[y].isna()) & (df[group]==groupval)]['Date'].drop_duplicates().nlargest(totdays+ignoredays).nsmallest(totdays-fitdays)
+    fit_dates = df[(~df[y].isna()) & (df[group]==groupval)]['Date'].drop_duplicates().nlargest(fitdays+ignoredays).nsmallest(fitdays)
+    ignore_dates= df[(~df[y].isna()) & (df[group]==groupval)]['Date'].drop_duplicates().nlargest(ignoredays)
     nofit = altair.Chart(
-        df[((df['Date'].isin(nofit_dates)) | df['Date'].isin(ignore_dates)) & (~df['New cases 7-day rolling mean'].isna()) & (df['Nation']==nation)]
+        df[((df['Date'].isin(nofit_dates)) | df['Date'].isin(ignore_dates)) & (~df[y].isna()) & (df[group]==groupval)]
     ).mark_point(
         color=colour,
         opacity=0.7
@@ -131,7 +214,7 @@ def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
             type='temporal'
         ),
         y=altair.Y(
-            field='New cases 7-day rolling mean',
+            field=y,
             type='quantitative',
             aggregate='sum',
             scale=altair.Scale(
@@ -140,7 +223,7 @@ def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
         )
     )
 
-    tofit = df[(df['Date'].isin(fit_dates)) & (~df['New cases 7-day rolling mean'].isna()) & (df['Nation']==nation)]
+    tofit = df[(df['Date'].isin(fit_dates)) & (~df[y].isna()) & (df[group]==groupval)]
     fit = altair.Chart(
         tofit
     ).mark_point(
@@ -152,18 +235,18 @@ def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
             type='temporal'
         ),
         y=altair.Y(
-            field='New cases 7-day rolling mean',
+            field=y,
             type='quantitative',
             aggregate='sum',
             scale=altair.Scale(
                 type='log'
             ),
-            title='New cases (7-day rolling mean)'
+            title=y_title
         )
     )
 
-    tofit['x'] = (tofit['Date']  - df['Date'].min()).dt.days
-    curve = numpy.polyfit(tofit['x'], numpy.log(tofit['New cases 7-day rolling mean']), 1)
+    tofit['x'] = (tofit['Date'] - df['Date'].min()).dt.days
+    curve = numpy.polyfit(tofit['x'], numpy.log(tofit[y]), 1)
     tofit['result'] = fit_exp(curve[0], curve[1], tofit['x'])
     pct_change = (fit_exp(curve[0], curve[1], 2) - fit_exp(curve[0], curve[1], 1)) / fit_exp(curve[0], curve[1], 1)
     pct_change_wk = (fit_exp(curve[0], curve[1], 8) - fit_exp(curve[0], curve[1], 1)) / fit_exp(curve[0], curve[1], 1)
@@ -197,7 +280,7 @@ def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
             scale=altair.Scale(
                 type='log'
             ),
-            title='New cases (7-day rolling mean)'
+            title=y_title
         )
     )
 
@@ -237,7 +320,7 @@ def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
             ),
         ).properties(
             title=altair.TitleParams(
-                'COVID-19 cases in %s' %nation,
+                'COVID-19 cases in %s' %groupval,
             ),
             height=384,
             width=512,
@@ -255,25 +338,159 @@ def plot_fit(nation, colour, totdays, fitdays, ignoredays=0):
     )
 
 # %%
-plt = plot_fit('Northern Ireland', '#076543', 42, 9, 1)
+plt = plot_single_trendline_fit(df, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Nation', 'Northern Ireland', '#076543', 42, 9, 1)
 plt.save('nir-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
 plt
 
 # %%
-plt = plot_fit('Wales', '#D30731', 42, 9, 1)
+plt = plot_single_trendline_fit(df, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Nation', 'Wales', '#D30731', 42, 9, 1)
 plt.save('wal-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
 plt
 
 # %%
-plt = plot_fit('Scotland', '#005eb8', 42, 9, 1)
+plt = plot_single_trendline_fit(df, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Nation', 'Scotland', '#005eb8', 42, 9, 1)
 plt.save('sco-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
 plt
 
 # %%
-plt = plot_fit('England', 'slategrey', 42, 9, 1)
+plt = plot_single_trendline_fit(df, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Nation', 'England', 'slategrey', 42, 9, 1)
 plt.save('eng-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
 plt
 
+# %% NISRA mid-year LGD population estimates
+nipop = pandas.DataFrame([
+    {"Area": "Antrim and Newtownabbey","Population": 143504},
+    {"Area": "Armagh City, Banbridge and Craigavon","Population": 216205},
+    {"Area": "Belfast","Population": 343542},
+    {"Area": "Causeway Coast and Glens","Population": 144838},
+    {"Area": "Derry City and Strabane","Population": 151284},
+    {"Area": "Fermanagh and Omagh","Population": 117397},
+    {"Area": "Lisburn and Castlereagh","Population": 146002},
+    {"Area": "Mid and East Antrim","Population": 139274},
+    {"Area": "Ards and North Down","Population": 161725},
+    {"Area": "Mid Ulster","Population": 148528},
+    {"Area": "Newry, Mourne and Down","Population": 181368},
+    {"Area": "Missing Postcode","Population": 0}
+])
+
 # %%
+def calc_exp_fit0(data):
+    curve = numpy.polyfit(data.index, numpy.log(data.values), 1)
+    return curve[0]
+
+def calc_exp_fit1(data):
+    curve = numpy.polyfit(data.index, numpy.log(data.values), 1)
+    return curve[1]
+
+def get_model_for_area(df):
+    df.set_index('x', inplace=True)
+    df['model0'] = df['Rolling cases per 100k'].rolling(window=9, center=True).apply(calc_exp_fit0)
+    df['model1'] = df['Rolling cases per 100k'].rolling(window=9, center=True).apply(calc_exp_fit1)
+    return df[['model0','model1']]
+
+def create_models(df, areakey):
+    df['x'] = (df['Date'] - df['Date'].min()).dt.days
+    df = df.merge(
+        df.groupby(areakey).apply(get_model_for_area),
+        left_on=[areakey,'x'],
+        right_index=True,
+        validate='1:1'
+    )
+    print(df)
+    df['model_daily_change'] = (fit_exp(df['model0'], df['model1'], 2) - fit_exp(df['model0'], df['model1'], 1)) / fit_exp(df['model0'], df['model1'], 1)
+    df['model_weekly_change'] = (fit_exp(df['model0'], df['model1'], 8) - fit_exp(df['model0'], df['model1'], 1)) / fit_exp(df['model0'], df['model1'], 1)
+    return(df)
+
+ni = pandas.read_excel('~/Downloads/doh-dd-110521.xlsx', sheet_name='Tests')
+ni.rename(columns={'LGD2014NAME': 'Area', 'Date of Specimen': 'Date'}, inplace=True)
+ni['Area'] = ni['Area'].fillna('Missing Postcode')
+newind = pandas.date_range(start=ni['Date'].min(), end=ni['Date'].max())
+ni.fillna(0, inplace=True)
+ni = ni.groupby(['Date','Area']).sum()
+ni = ni.reindex(pandas.MultiIndex.from_product([newind,ni.index.levels[1]], names=['Date','Area']), fill_value=0).reset_index()
+ni['New cases 7-day rolling mean'] = ni.groupby('Area')['Individ with Positive Lab Test'].rolling(7, center=True).mean().droplevel(0)
+ni = ni.merge(nipop, how='left', left_on='Area', right_on='Area', validate='m:1')
+ni['Rolling cases per 100k'] = 100000 * (ni['New cases 7-day rolling mean'] / ni['Population'])
+ni = create_models(ni, 'Area')
+df = create_models(df, 'Nation')
 
 
+# %%
+plot_multiple_trendlines(
+    ni[ni['Date']>'2020-12-24'],
+    y='New cases 7-day rolling mean',
+    color='Area',
+    y_scale='log',
+).properties(
+    height=450,
+    width=800
+)
+
+# %%
+plot_multiple_trendlines(
+    ni[ni['Date']>'2020-12-24'],
+    y='Rolling cases per 100k',
+    color='Area',
+    y_scale='log',
+).properties(
+    height=450,
+    width=800
+)
+
+# %%
+plot_multiple_trendlines(
+    ni[ni['Date']>'2021-03-31'],
+    y='Rolling cases per 100k',
+    color='Area',
+    y_scale='log',
+).properties(
+    height=450,
+    width=800
+)
+
+# %%
+plot_single_trendline_fit(ni, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Area', 'Derry City and Strabane', 'slategrey', 42, 9, 1)
+
+# %%
+plot_single_trendline_fit(ni, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Area', 'Armagh City, Banbridge and Craigavon', 'red', 42, 9, 1)
+
+# %%
+plot_single_trendline_fit(ni, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Area', 'Ards and North Down', 'orange', 42, 9, 1)
+
+# %%
+plot_single_trendline(
+    ni[(ni['Date'] > '2020-12-24') & (ni['Area']=='Derry City and Strabane')],
+    y='model_daily_change',
+    color='#076543',
+    y_format='%'
+)
+
+# %%
+plot_single_trendline(
+    ni[(ni['Date'] > '2020-12-24') & (ni['Area']=='Armagh City, Banbridge and Craigavon')],
+    y='model_daily_change',
+    color='#076543',
+    y_format='%'
+)
+
+# %%
+plot_multiple_trendlines(
+    ni[ni['Date']>'2020-11-24'],
+    y='model_daily_change',
+    color='Area'
+).properties(
+    height=450,
+    width=800
+)
+
+# %%
+plot_multiple_trendlines(
+    df[df['Date']>'2020-11-24'],
+    y='model_daily_change',
+    color='Nation',
+    domain=['England','Scotland','Wales','Northern Ireland'],
+    range=['grey','#005eb8','#D30731','#076543']
+).properties(
+    height=450,
+    width=800
+)
