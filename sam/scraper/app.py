@@ -176,6 +176,13 @@ def check_hscni(bucketname, indexkey, s3):
     else:
         reportdate = noyeardate.replace(year=today.year) - datetime.timedelta(days=1)
 
+    if 'Vaccinations Total' in data:
+        data['Total Doses'] = data['Vaccinations Total']
+    if 'Vaccinations Total (Dose 1)' in data:
+        data['Total First Doses'] = data['Vaccinations Total (Dose 1)']
+    if 'Vaccinations Total (Dose 2)' in data:
+        data['Total Second Doses'] = data['Vaccinations Total (Dose 2)']
+
     # Account for one day delay in reporting
     data['Last Updated'] = reportdate.isoformat()
     data['First Doses pc'] = round((100 * data['Total First Doses']) / 1452962, 1)
