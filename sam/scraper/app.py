@@ -142,13 +142,8 @@ def check_doh(secret, s3, notweet, mode):
 
     return message
 
-def check_hscni(bucketname, indexkey, s3):
+def check_hscni(previous):
     session = requests.Session()
-
-    status = S3_scraper_index(s3, bucketname, indexkey)
-    previous = status.get_dict()
-    if len(previous) > 0:
-        previous = sorted(previous, key=lambda k: k['Last Updated'], reverse=True)
 
     # Get the COVID-19 site homepage
     url = 'https://covid-19.hscni.net/'
@@ -208,18 +203,10 @@ def check_hscni(bucketname, indexkey, s3):
         previous.insert(0, data)
         change = True
 
-    if change:
-        status.put_dict(previous)
+    return previous, change
 
-    return previous[0], change
-
-def check_phe(bucketname, indexkey, s3):
+def check_phe(previous):
     session = requests.Session()
-
-    status = S3_scraper_index(s3, bucketname, indexkey)
-    previous = status.get_dict()
-    if len(previous) > 0:
-        previous = sorted(previous, key=lambda k: k['Last Updated'], reverse=True)
 
     # Get the PHE data from the API
     url = 'https://api.coronavirus.data.gov.uk/v2/data?areaType=nation&areaCode=N92000002&metric=cumPeopleVaccinatedFirstDoseByPublishDate&metric=cumPeopleVaccinatedSecondDoseByPublishDate&metric=cumVaccinationFirstDoseUptakeByPublishDatePercentage&metric=cumVaccinationSecondDoseUptakeByPublishDatePercentage&format=json'
@@ -249,10 +236,7 @@ def check_phe(bucketname, indexkey, s3):
             previous.insert(0, data)
             change = True
 
-    if change:
-        status.put_dict(previous)
-
-    return previous[0], change
+    return previous, change
 
 def check_symptoms():
     url = 'https://services-eu1.arcgis.com/CbFuxzn9jT2gu2G1/arcgis/rest/services/Prod_Symptoms_By_Hex_Tess_All_Public_View/FeatureServer/0/query'
@@ -268,32 +252,47 @@ def check_symptoms():
     }
     print('POST %s to %s' %(formdata,url))
 
-def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
+def get_and_sort_index(bucketname, indexkey, s3):
+    status = S3_scraper_index(s3, bucketname, indexkey)
+    previous = status.get_dict()
+    if len(previous) > 0:
+        previous = sorted(previous, key=lambda k: k['Last Updated'], reverse=True)
+    return previous, status
 
+def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
+    phe, pheindex = get_and_sort_index(bucketname, pheindexkey, s3)
+    hsc, hscindex = get_and_sort_index(bucketname, hscniindexkey, s3)
+
+    phechange = False
+    hscchange = False
     try:
-        phe, phechange = check_phe(bucketname, pheindexkey, s3)
+        phe, phechange = check_phe(phe)
     except:
-        phechange = False
         logging.exception('Caught exception accessing PHE vaccine data')
     try:
-        hsc, hscchange = check_hscni(bucketname, hscniindexkey, s3)
+        hsc, hscchange = check_hscni(hsc)
     except:
-        hscchange = False
         logging.exception('Caught exception accessing HSCNI vaccine data')
 
+    # Update the S3 indexes if there was a change
+    if phechange:
+        pheindex.put_dict(phe)
+    if hscchange:
+        hscindex.put_dict(hsc)
+
     # If there has been a change, then tweet
-    message = 'Did nothing'
     change = False
-    if hscchange and (hsc['Last Updated'] > phe['Last Updated']):
-        chosen = hsc
+    if hscchange and phechange and (phe[0]['Last Updated'] == hsc[0]['Last Updated']):
+        chosen = phe[0]
         change = True
-    elif phechange and (phe['Last Updated'] > hsc['Last Updated']):
-        chosen = phe
+    elif hscchange and ((len(phe) == 0) or (hsc[0]['Last Updated'] > phe[0]['Last Updated'])):
+        chosen = hsc[0]
         change = True
-    elif hscchange and phechange and (phe['Last Updated'] == hsc['Last Updated']):
-        chosen = phe
+    elif phechange and ((len(hsc) == 0) or (phe[0]['Last Updated'] > hsc[0]['Last Updated'])):
+        chosen = phe[0]
         change = True
 
+    message = 'Did nothing'
     if change is True:
         message = 'New last updated date of %s from %s' %(chosen['Last Updated'],chosen['Source'])
         print(chosen)
