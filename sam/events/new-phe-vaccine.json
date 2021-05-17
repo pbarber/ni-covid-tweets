@@ -7,7 +7,7 @@
     "Second Doses Registered": 8932,
     "First Doses pc": 68.5,
     "Second Doses pc": 37.6,
-    "notweet": false,
+    "notweet": true,
     "Source": "PHE",
     "tweet2test": false
 }

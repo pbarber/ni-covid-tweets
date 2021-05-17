@@ -10,7 +10,7 @@
     "First Doses pc": 68.5,
     "Second Doses pc": 37.6,
     "Source": "HSCNI",
-    "notweet": false,
+    "notweet": true,
     "tweet2test": false,
     "First Doses Registered": 8745,
     "Second Doses Registered": 31260
