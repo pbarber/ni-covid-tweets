@@ -407,8 +407,11 @@ def check_cog(secret, s3, notweet):
 
     # Launch tweeter for any changes
     if latest is not None:
-        print(latest)
         message = 'Found file'
+        print(latest)
+        print('Launching COG variants tweeter')
+        launch_lambda_async(os.getenv('VARIANTS_TWEETER_LAMBDA'),latest)
+        message += ', and launched variants tweet lambda'
     else:
         message = 'Did nothing'
 
