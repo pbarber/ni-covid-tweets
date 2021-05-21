@@ -1,13 +1,12 @@
 {
-    "Last Updated": "2021-05-14",
-    "Total Doses": 1541028,
-    "Total First Doses": 994753,
-    "Total Second Doses": 546275,
-    "First Doses Registered": 2071,
-    "Second Doses Registered": 8932,
-    "First Doses pc": 68.5,
-    "Second Doses pc": 37.6,
-    "notweet": true,
+    "Last Updated": "2021-05-19",
+    "Total Doses": 1592566,
+    "Total First Doses": 1008589,
+    "Total Second Doses": 583977,
+    "First Doses Registered": 4519,
+    "Second Doses Registered": 8918,
+    "First Doses pc": 69.4,
+    "Second Doses pc": 40.2,
     "Source": "PHE",
-    "tweet2test": false
+    "notweet": true
 }
