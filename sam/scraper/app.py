@@ -252,11 +252,11 @@ def check_symptoms():
     }
     print('POST %s to %s' %(formdata,url))
 
-def get_and_sort_index(bucketname, indexkey, s3):
+def get_and_sort_index(bucketname, indexkey, s3, sortby='Last Updated'):
     status = S3_scraper_index(s3, bucketname, indexkey)
     previous = status.get_dict()
     if len(previous) > 0:
-        previous = sorted(previous, key=lambda k: k['Last Updated'], reverse=True)
+        previous = sorted(previous, key=lambda k: k[sortby], reverse=True)
     return previous, status
 
 def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
@@ -352,6 +352,68 @@ def check_nisra(secret, s3, notweet):
         message = 'Did nothing'
 
     return message
+
+def requests_stream(session, url):
+    with session.get(url, stream=True) as stream:
+        stream.raise_for_status()
+
+def check_for_cog_files(s3, bucketname, indexkey):
+    today = datetime.datetime.today().date()
+    session = requests.Session()
+
+    previous, index = get_and_sort_index(bucketname, indexkey, s3, 'filedate')
+
+    if len(previous) == 0:
+        last = datetime.datetime.strptime('2021-05-11', '%Y-%m-%d').date()
+    else:
+        last = datetime.datetime.strptime(previous[0]['filedate'], '%Y-%m-%d').date()
+
+    if last == today:
+        return None
+
+    found = []
+    while today > last:
+        url = "https://cog-uk-microreact.s3.climb.ac.uk/{today}/cog_metadata_microreact_geocodes_only.csv".format(today=today.isoformat())
+        resp = session.head(url)
+        if (resp.headers['Content-Type'] == 'binary/octet-stream'):
+            modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
+            d = {
+                'url': url,
+                'modified': modified.isoformat(),
+                'length': int(resp.headers['Content-Length']),
+                'filedate': today.isoformat(),
+            }
+            d['keyname'] = "COG-variants/%s/%s-%s.csv" %(d['filedate'],d['modified'].replace(':','_'),d['length'])
+            print('getting URL')
+            with session.get(url, stream=True) as stream:
+                stream.raise_for_status()
+                stream.raw.decode_content = True
+                s3.upload_fileobj(stream.raw, bucketname, d['keyname'], Config=boto3.s3.transfer.TransferConfig(use_threads=False))
+            print('done')
+            found.append(d)
+        today -= datetime.timedelta(days=1)
+
+    if len(found) == 0:
+        return None
+
+    found.extend(previous)
+    index.put_dict(found)
+
+    return found[0]
+
+def check_cog(secret, s3, notweet):
+    # Check the COG bucket for file changes
+    latest = check_for_cog_files(s3, secret['bucketname'], secret['cog-variants-index'])
+
+    # Launch tweeter for any changes
+    if latest is not None:
+        print(latest)
+        message = 'Found file'
+    else:
+        message = 'Did nothing'
+
+    return message
+
 
 def check_for_cta_travel_changes(previous):
     url = 'https://www.nidirect.gov.uk/articles/coronavirus-covid-19-travel-within-common-travel-area'
@@ -451,6 +513,11 @@ def lambda_handler(event, context):
             messages.append(check_cta_travel(secret, s3, event.get('cta-notweet', False)))
         except:
             logging.exception('Caught exception accessing NISRA weekly data')
+        try:
+            messages.append(check_cog(secret, s3, event.get('cog-notweet', False)))
+        except:
+            logging.exception('Caught exception accessing COG variants data')
+            print('Where is my exception?')
 
     return {
         "statusCode": 200,

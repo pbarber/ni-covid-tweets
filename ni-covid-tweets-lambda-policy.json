@@ -38,7 +38,8 @@
                 "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDVaccineTweeter-1Q5CK6FJHAEOY",
                 "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDRTweeter-1D5BES9FN6F5B",
                 "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDNISRATweeter-1OSIZGQMZSPS9",
-                "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDGenericTweeter-BDMENG7FEBI9"
+                "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDGenericTweeter-BDMENG7FEBI9",
+                "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDVariantsTweeter-RL15oharKg4A"
             ]
         }
     ]
