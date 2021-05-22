@@ -377,20 +377,12 @@ def check_for_cog_files(s3, bucketname, indexkey):
         resp = session.head(url)
         if (resp.headers['Content-Type'] == 'binary/octet-stream'):
             modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
-            d = {
+            found.append({
                 'url': url,
                 'modified': modified.isoformat(),
                 'length': int(resp.headers['Content-Length']),
                 'filedate': today.isoformat(),
-            }
-            d['keyname'] = "COG-variants/%s/%s-%s.csv" %(d['filedate'],d['modified'].replace(':','_'),d['length'])
-            print('getting URL')
-            with session.get(url, stream=True) as stream:
-                stream.raise_for_status()
-                stream.raw.decode_content = True
-                s3.upload_fileobj(stream.raw, bucketname, d['keyname'], Config=boto3.s3.transfer.TransferConfig(use_threads=False))
-            print('done')
-            found.append(d)
+            })
         today -= datetime.timedelta(days=1)
 
     if len(found) == 0:

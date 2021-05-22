@@ -5,6 +5,7 @@ import logging
 
 import boto3
 import pandas
+import requests
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
@@ -26,8 +27,17 @@ def lambda_handler(event, context):
         status = S3_scraper_index(s3, secret['bucketname'], secret['cog-variants-index'])
         index = status.get_dict()
 
+        # Create a copy of the file in s3
+        keyname = "COG-variants/%s/%s-%s.csv" %(event['filedate'],event['modified'].replace(':','_'),event['length'])
+        print('getting URL')
+        with requests.get(event['url'], stream=True) as stream:
+            stream.raise_for_status()
+            stream.raw.decode_content = True
+            s3.upload_fileobj(stream.raw, secret['bucketname'], keyname, Config=boto3.s3.transfer.TransferConfig(use_threads=False))
+        print('done')
+
         # Download the most recently updated CSV file
-        obj = s3.get_object(Bucket=secret['bucketname'],Key=event['keyname'])['Body']
+        obj = s3.get_object(Bucket=secret['bucketname'],Key=keyname)['Body']
         stream = io.BytesIO(obj.read())
 
         # Load variant data, aggregate and push back to S3
@@ -37,16 +47,19 @@ def lambda_handler(event, context):
         stream = io.BytesIO()
         lineage.to_csv(stream, index=False)
         stream.seek(0)
-        lineage_key = '%s_lineage.csv' % event['keyname'].rsplit('.',maxsplit=1)[0]
+        lineage_key = '%s_lineage.csv' % keyname.rsplit('.',maxsplit=1)[0]
         s3.upload_fileobj(stream, secret['bucketname'], lineage_key)
         messages.append('Wrote lineage summary to s3')
 
         # Update the S3 index and find the previous date
         previous = '1970-01-01'
         prev_lineagekey = None
+        thisindex = None
         for i in range(len(index)):
-            if index[i]['keyname'] == event['keyname']:
+            if index[i]['modified'] == event['modified']:
                 index[i]['lineage'] = lineage_key
+                index[i]['keyname'] = keyname
+                thisindex = i
             elif index[i]['filedate'] != event['filedate']:
                 if (index[i]['filedate'] > previous) and (index[i]['filedate'] < event['filedate']):
                     previous = index[i]['filedate']
@@ -61,21 +74,20 @@ def lambda_handler(event, context):
             lineage = lineage.merge(prev_lineage, how='left', left_on='lineage', right_on='lineage')
             lineage['diff'] = (lineage['count_x'] - lineage['count_y']).fillna(0).astype(int)
             lineage.set_index('lineage', inplace=True)
-            top5 = lineage['diff'].nlargest(5)
-            tweet = """{total:,d} new COVID analyses reported for NI on {currdate} since {prevdate}:
+            top5 = lineage.nlargest(5, 'diff')
+            tweet = """{total:,d} new variant analyses reported for NI on {currdate} since {prevdate} ({altogether:,d} total):
 """.format(
                 total=lineage['diff'].sum(),
                 prevdate=datetime.datetime.strptime(previous, '%Y-%m-%d').date().strftime('%A %-d %B %Y'),
-                currdate=datetime.datetime.strptime(event['filedate'], '%Y-%m-%d').date().strftime('%A %-d %B %Y')
+                currdate=datetime.datetime.strptime(event['filedate'], '%Y-%m-%d').date().strftime('%A %-d %B %Y'),
+                altogether=lineage['count_x'].sum()
             )
-            for variant,count in top5.to_dict().items():
-                if count > 0:
-                    tweet += f"\u2022 {variant}: {count:,d}\n"
-            others = int(lineage['diff'].sum() - top5.sum())
-            if others > 0:
+            for variant,data in top5.to_dict('index').items():
+                if data['diff'] > 0:
+                    tweet += f"\u2022 {variant}: {data['diff']:,d} (of {data['count_x']:,d})\n"
+            others = int(lineage['diff'].sum() - top5['diff'].sum())
+            if others != 0:
                 tweet += f"\u2022 Others: {others:,d}\n"
-            if others < 0:
-                tweet += f"\u2022 Corrections: {others:,d}\n"
             tweet += '\nSource: https://beta.microreact.org/'
 
             if event.get('notweet') is not True:
@@ -87,10 +99,7 @@ def lambda_handler(event, context):
                     resp = api.tweet(tweet)
                     messages.append('Tweeted ID %s, ' %resp.id)
                     # Update the file index
-                    for i in range(len(index)):
-                        if index[i]['keyname'] == event['keyname']:
-                            index[i]['tweet'] = resp.id
-                            break
+                    index[thisindex]['tweet'] = resp.id
                     status.put_dict(index)
             else:
                 messages.append('Did not tweet')
