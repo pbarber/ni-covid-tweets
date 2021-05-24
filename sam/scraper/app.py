@@ -368,21 +368,22 @@ def check_for_cog_files(s3, bucketname, indexkey):
     else:
         last = datetime.datetime.strptime(previous[0]['filedate'], '%Y-%m-%d').date()
 
-    if last == today:
+    if last > today:
         return None
 
     found = []
-    while today > last:
+    while today >= last:
         url = "https://cog-uk-microreact.s3.climb.ac.uk/{today}/cog_metadata_microreact_geocodes_only.csv".format(today=today.isoformat())
         resp = session.head(url)
         if (resp.headers['Content-Type'] == 'binary/octet-stream'):
             modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
-            found.append({
-                'url': url,
-                'modified': modified.isoformat(),
-                'length': int(resp.headers['Content-Length']),
-                'filedate': today.isoformat(),
-            })
+            if (modified.isoformat() != previous[0]['modified']) and (int(resp.headers['Content-Length']) != int(previous[0]['length'])):
+                found.append({
+                    'url': url,
+                    'modified': modified.isoformat(),
+                    'length': int(resp.headers['Content-Length']),
+                    'filedate': today.isoformat(),
+                })
         today -= datetime.timedelta(days=1)
 
     if len(found) == 0:
