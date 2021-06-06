@@ -107,3 +107,21 @@ Resources:
       MemorySize: 2048
       EventInvokeConfig:
         MaximumRetryAttempts: 0
+  NICOVIDVariants:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      Timeout: 300
+      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
+      MemorySize: 2048
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+      Events:
+        InvocationLevel:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 hour)
+    Metadata:
+      DockerTag: selenium-v2
+      DockerContext: ./
+      Dockerfile: variants/Dockerfile
