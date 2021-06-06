@@ -1,1 +1,7 @@
-{"tests-notweet": true, "vaccine-notweet": true, "r-notweet": true, "nisra-notweet": true, "cta-notweet": true}
+{
+    "tests-notweet": true,
+    "vaccine-notweet": true,
+    "r-notweet": true,
+    "nisra-notweet": true,
+    "cta-notweet": true
+}
