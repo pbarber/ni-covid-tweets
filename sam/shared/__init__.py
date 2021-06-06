@@ -36,3 +36,10 @@ def get_url(session, url, format):
         return(resp.content)
     else:
         return(resp.json())
+
+def get_and_sort_index(bucketname, indexkey, s3, sortby='Last Updated'):
+    status = S3_scraper_index(s3, bucketname, indexkey)
+    previous = status.get_dict()
+    if len(previous) > 0:
+        previous = sorted(previous, key=lambda k: k[sortby], reverse=True)
+    return previous, status

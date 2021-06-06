@@ -8,23 +8,7 @@ import boto3
 
 from selenium import webdriver
 
-from shared import S3_scraper_index, launch_lambda_async, get_url
-
-def upload_changes_to_s3(s3client, bucket, dirname, index, changes, fileext):
-    session = requests.Session()
-    for change in changes:
-        e = index[change['index']]
-        keyname = "%s/%s/%s-%s.%s" %(dirname,e['filedate'],e.get('modified', '1').replace(':','_'),e.get('length','1'),fileext)
-        s3client.put_object(Bucket=bucket, Key=keyname, Body=get_url(session, e['url'],'content'))
-        index[change['index']]['keyname'] = keyname
-    return index
-
-def get_and_sort_index(bucketname, indexkey, s3, sortby='Last Updated'):
-    status = S3_scraper_index(s3, bucketname, indexkey)
-    previous = status.get_dict()
-    if len(previous) > 0:
-        previous = sorted(previous, key=lambda k: k[sortby], reverse=True)
-    return previous, status
+from shared import S3_scraper_index, launch_lambda_async, get_url, get_and_sort_index
 
 def check_for_cog_files(s3, bucketname, indexkey):
     today = datetime.datetime.today().date()

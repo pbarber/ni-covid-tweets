@@ -9,7 +9,7 @@ import requests
 from bs4 import BeautifulSoup
 import boto3
 
-from shared import S3_scraper_index, launch_lambda_async, get_url
+from shared import S3_scraper_index, launch_lambda_async, get_url, get_and_sort_index
 
 def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y'):
     html = BeautifulSoup(text,features="html.parser")
@@ -251,13 +251,6 @@ def check_symptoms():
         "where": "(DateOfReport BETWEEN timestamp '2021-03-04 00:00:00' AND CURRENT_TIMESTAMP) AND ((DateOfReport BETWEEN timestamp '2021-03-04 00:00:00' AND timestamp '2021-03-28 00:59:59' OR DateOfReport BETWEEN timestamp '2021-03-28 01:00:00' AND timestamp '2021-04-01 00:00:00'))"
     }
     print('POST %s to %s' %(formdata,url))
-
-def get_and_sort_index(bucketname, indexkey, s3, sortby='Last Updated'):
-    status = S3_scraper_index(s3, bucketname, indexkey)
-    previous = status.get_dict()
-    if len(previous) > 0:
-        previous = sorted(previous, key=lambda k: k[sortby], reverse=True)
-    return previous, status
 
 def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
     phe, pheindex = get_and_sort_index(bucketname, pheindexkey, s3)
