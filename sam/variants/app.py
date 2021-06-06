@@ -4,9 +4,13 @@ import os
 import logging
 
 import requests
+from bs4 import BeautifulSoup
 import boto3
 
 from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 
 from shared import S3_scraper_index, launch_lambda_async, get_url, get_and_sort_index
 
@@ -35,7 +39,14 @@ def check_for_cog_files(s3, bucketname, indexkey):
     options.add_argument("--disable-infobars")
     driver = webdriver.Chrome(options=options)
     driver.get('http://sars2.cvr.gla.ac.uk/cog-uk/')
-    print('Loaded COVID dashboard OK')
+    WebDriverWait(driver, 20).until(EC.text_to_be_present_in_element((By.CSS_SELECTOR, "#shiny-tab-vui_voc"), "Northern Ireland"))
+    #WebDriverWait(driver, 20).until(EC.presence_of_element_located((By.CSS_SELECTOR, "#shiny-tab-vui_voc")))
+    html = BeautifulSoup(driver.page_source,features="html.parser")
+    button = html.find("a", {"id": "downloadTable3"})
+    url = 'http://sars2.cvr.gla.ac.uk/cog-uk/' + button['href']
+    resp = session.get(url)
+    print(resp.content)
+#    s3.put_object(Bucket=bucketname, Key=keyname, Body=get_url(session, url, 'content'))
     raise Exception('Here: %s' %driver)
     found = []
     while today >= last:
