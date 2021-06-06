@@ -1,4 +1,6 @@
 #%%
+import io
+
 import pandas
 import altair
 
@@ -39,4 +41,11 @@ lineage[lineage['lineage'].str.strip()=='B.1.617.2']
 len(df)
 # %%
 df[df['sequence_name'].isin(['COG368878','COG934551','COG518549','COG743441','COG680501','COG754556','COG477927','COG755039','COG606825','COG900779'])]
+# %%
+resp = requests.get('http://sars2.cvr.gla.ac.uk/cog-uk/session/8508cd8c20a80bd6255156d95e5626e3/download/downloadTable3?w=')
+resp.raise_for_status()
+stream = io.BytesIO(resp.content)
+df = pandas.read_csv(stream)
+# %%
+df[['Variant','Northern Ireland','Northern Ireland 28 Days']]
 # %%
