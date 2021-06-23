@@ -17,7 +17,7 @@ bhsct_beds = bhsct_beds.groupby(['start','Care','Hospital'])['Available', 'Occup
 bhsct_beds = bhsct_beds.melt(id_vars=['start','Care','Hospital'])
 bhsct_beds['col'] = bhsct_beds['Care'] + '-' + bhsct_beds['variable']
 bhsct_beds = bhsct_beds.pivot(index=['start','Hospital'], columns='col', values='value')
-bhsct_beds.rename(columns={'ICU/Critical Care-Available': 'ICU Available', 'NON ICU/Critical Care-Available': 'Non ICU Available', 'ICU/Critical Care-Occupied': 'ICU Occupied', 'NON ICU/Critical Care-Occupied': 'Non ICU Occupied'}, inplace=True)
+bhsct_beds.rename(columns={'ICU/Critical Care-Available': 'Critical Care Available', 'NON ICU/Critical Care-Available': 'General Available', 'ICU/Critical Care-Occupied': 'Critical Care Occupied', 'NON ICU/Critical Care-Occupied': 'General Occupied'}, inplace=True)
 bhsct_ae = pandas.read_excel('../data/BHSCT/10-11330 Available_Occupied Beds & ED Atts 2010 - 2020.xlsx', engine='openpyxl', header=6, sheet_name='AE')
 bhsct_ae['start'] = pandas.to_datetime(bhsct_ae['Dates'].str.split(' - ', expand=True)[0], format='%d/%m/%Y')
 bhsct_ae.drop(columns=['Dates'],inplace=True)
@@ -50,13 +50,13 @@ nhsct_icu = pandas.read_excel('../data/NHSCT/20210208_PB080121_Response_Attachme
 nhsct_icu['date'] = pandas.to_datetime(nhsct_icu['DATE'], format='%Y-%m-%d')
 nhsct_icu.rename(columns={'HOSPITAL': 'Hospital'}, inplace=True)
 nhsct_icu_daily = nhsct_icu.groupby(['date','Hospital'])['AVAILABLE BEDS','OCCUPIED BEDS'].sum()
-nhsct_icu_daily.rename(columns={'AVAILABLE BEDS': 'ICU Available', 'OCCUPIED BEDS': 'ICU Occupied'}, inplace=True)
+nhsct_icu_daily.rename(columns={'AVAILABLE BEDS': 'Critical Care Available', 'OCCUPIED BEDS': 'Critical Care Occupied'}, inplace=True)
 nhsct_daily = nhsct_icu_daily.merge(nhsct_ae_daily, how='left', left_index=True, right_index=True)
 nhsct_nonicu = pandas.read_excel('../data/NHSCT/20210208_PB080121_Response_Attachment_IJ.xlsx', engine='openpyxl', header=6, sheet_name='Non ICU Wards')
 nhsct_nonicu['date'] = pandas.to_datetime(nhsct_nonicu['DATE'], format='%Y-%m-%d')
 nhsct_nonicu.rename(columns={'HOSPITAL': 'Hospital'}, inplace=True)
 nhsct_nonicu_daily = nhsct_nonicu.groupby(['date','Hospital'])['AVAILABLE BEDS','OCCUPIED BEDS'].sum()
-nhsct_nonicu_daily.rename(columns={'AVAILABLE BEDS': 'Non ICU Available', 'OCCUPIED BEDS': 'Non ICU Occupied'}, inplace=True)
+nhsct_nonicu_daily.rename(columns={'AVAILABLE BEDS': 'General Available', 'OCCUPIED BEDS': 'General Occupied'}, inplace=True)
 nhsct_daily = nhsct_daily.merge(nhsct_nonicu_daily, how='left', left_index=True, right_index=True)
 nhsct_daily = nhsct_daily.astype(int)
 nhsct_daily.reset_index(inplace=True)
@@ -77,7 +77,7 @@ sehsct_beds = sehsct_beds.melt(id_vars=[('start','','')])
 sehsct_beds.rename(columns={('start','',''): 'start', 'variable_0': 'hospital', 'variable_1': 'state', 'variable_2': 'ward'}, inplace=True)
 sehsct_beds['col'] = sehsct_beds['ward'] + '-' + sehsct_beds['state']
 sehsct_beds = sehsct_beds.pivot(index=['start', 'hospital'], columns='col', values='value').reset_index(1)
-sehsct_beds.rename(columns={'ICU/Critical Care-Available': 'ICU Available', 'Non Critical Care-Available': 'Non ICU Available', 'ICU/Critical Care-Occupied': 'ICU Occupied', 'Non Critical Care-Occupied': 'Non ICU Occupied'}, inplace=True)
+sehsct_beds.rename(columns={'ICU/Critical Care-Available': 'Critical Care Available', 'Non Critical Care-Available': 'General Available', 'ICU/Critical Care-Occupied': 'Critical Care Occupied', 'Non Critical Care-Occupied': 'General Occupied'}, inplace=True)
 sehsct_beds.fillna(0, inplace=True)
 sehsct_beds.rename(columns={'hospital': 'Hospital'}, inplace=True)
 sehsct_weekly = sehsct_beds.groupby(['start','Hospital']).sum()
@@ -115,13 +115,13 @@ shsct_icu.dropna(axis='index', subset=['Hospital Code'], inplace=True)
 shsct_icu['date'] = pandas.to_datetime(shsct_icu['Date'], format='%Y-%m-%d 00:00:00')
 shsct_icu.rename(columns={'Hospital Code':'Hospital'}, inplace=True)
 shsct_icu_daily = shsct_icu.groupby(['date','Hospital'])['ALLOCATED','OCCUPIED'].sum()
-shsct_icu_daily.rename(columns={'ALLOCATED': 'ICU Available', 'OCCUPIED': 'ICU Occupied'}, inplace=True)
+shsct_icu_daily.rename(columns={'ALLOCATED': 'Critical Care Available', 'OCCUPIED': 'Critical Care Occupied'}, inplace=True)
 shsct_nonicu = pandas.read_excel('../data/SHSCT/FOI 350 PARTS 1 AND 2 ALLOCATED AND OCCUPIED BEDS.xlsx', engine='openpyxl', header=11, sheet_name='OTHER BEDS')
 shsct_nonicu.dropna(axis='index', subset=['Hospital Code'], inplace=True)
 shsct_nonicu['date'] = pandas.to_datetime(shsct_nonicu['Date'], format='%Y-%m-%d 00:00:00')
 shsct_nonicu.rename(columns={'Hospital Code':'Hospital'}, inplace=True)
 shsct_nonicu_daily = shsct_nonicu.groupby(['date','Hospital'])['Allocated','Occupied'].sum()
-shsct_nonicu_daily.rename(columns={'Allocated': 'Non ICU Available', 'Occupied': 'Non ICU Occupied'}, inplace=True)
+shsct_nonicu_daily.rename(columns={'Allocated': 'General Available', 'Occupied': 'General Occupied'}, inplace=True)
 shsct_daily = shsct_nonicu_daily.merge(shsct_icu_daily, how='left', left_index=True, right_index=True)
 shsct_daily = shsct_daily.merge(shsct_ae_daily, how='left', left_index=True, right_index=True)
 shsct_daily.fillna(0, inplace=True)
@@ -150,7 +150,7 @@ whsct_beds.rename(columns={('start','',''): 'start', 'variable_0': 'Hospital', '
 whsct_beds['col'] = whsct_beds['ward'] + '-' + whsct_beds['state']
 whsct_beds = whsct_beds.pivot(index=['start', 'Hospital'], columns='col', values='value').reset_index()
 whsct_beds.replace({'ALTNAGELVIN HOSPITAL': 'Altnagelvin Hospital', 'ERNE / SOUTH WEST ACUTE HOSPITAL': 'South West Acute Hospital'}, inplace=True)
-whsct_beds.rename(columns={'ICU/Critical Care-Available': 'ICU Available', 'NON ICU/Critical Care-Available': 'Non ICU Available', 'ICU/Critical Care-Occupied': 'ICU Occupied', 'NON ICU/Critical Care-Occupied': 'Non ICU Occupied'}, inplace=True)
+whsct_beds.rename(columns={'ICU/Critical Care-Available': 'Critical Care Available', 'NON ICU/Critical Care-Available': 'General Available', 'ICU/Critical Care-Occupied': 'Critical Care Occupied', 'NON ICU/Critical Care-Occupied': 'General Occupied'}, inplace=True)
 whsct_beds.fillna(0, inplace=True)
 whsct_weekly = whsct_beds.groupby(['start','Hospital']).sum()
 whsct_weekly = whsct_weekly.merge(whsct_ae_weekly, how='left', left_index=True, right_index=True)
@@ -165,7 +165,7 @@ all_foi_weekly.to_csv('../data/all-foi-weekly.csv', index=False)
 altair.Chart(
     (all_foi_weekly[all_foi_weekly['Week beginning']=='2020-01-03'].groupby(['Trust','Hospital']).sum() / 7).reset_index()
 ).mark_bar().encode(
-    x=altair.X(field='ICU Available', type='quantitative', axis=altair.Axis(title='Critical Care Beds Available')),
+    x=altair.X(field='Critical Care Available', type='quantitative', axis=altair.Axis(title='Critical Care Beds Available')),
     y=altair.Y(field='Hospital', type='ordinal'),
     color='Trust'
 )
@@ -174,7 +174,7 @@ altair.Chart(
 altair.Chart(
     (all_foi_weekly[all_foi_weekly['Week beginning']=='2020-01-03'].groupby(['Trust','Hospital']).sum() / 7).reset_index()
 ).mark_bar().encode(
-    x=altair.X(field='ICU Available', type='quantitative', aggregate='sum', axis=altair.Axis(title='Critical Care Beds Available')),
+    x=altair.X(field='Critical Care Available', type='quantitative', aggregate='sum', axis=altair.Axis(title='Critical Care Beds Available')),
     y=altair.Y(field='Trust', type='ordinal'),
     color='Trust'
 )
@@ -183,7 +183,7 @@ altair.Chart(
 altair.Chart(
     (all_foi_weekly[all_foi_weekly['Week beginning']=='2020-01-03'].groupby(['Trust','Hospital']).sum() / 7).reset_index()
 ).mark_bar().encode(
-    x=altair.X(field='Non ICU Available', type='quantitative', axis=altair.Axis(title='Non Critical Care Beds Available')),
+    x=altair.X(field='General Available', type='quantitative', axis=altair.Axis(title='General Beds Available')),
     y=altair.Y(field='Hospital', type='ordinal'),
     color='Trust'
 )
@@ -193,7 +193,7 @@ altair.Chart(
     all_foi_weekly.groupby(['Week beginning', 'Trust']).sum().reset_index()
 ).mark_area().encode(
     x=altair.X(field='Week beginning', type='temporal'),
-    y=altair.Y(field='ICU Occupied', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Occupied Bed Days')),
+    y=altair.Y(field='Critical Care Occupied', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Critical Care Occupied Bed Days')),
     color='Trust'
 )
 
@@ -202,7 +202,7 @@ altair.Chart(
     all_foi_weekly.groupby(['Week beginning', 'Trust']).sum().reset_index()
 ).mark_area().encode(
     x=altair.X(field='Week beginning', type='temporal'),
-    y=altair.Y(field='ICU Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Available Bed Days')),
+    y=altair.Y(field='Critical Care Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Critical Care Available Bed Days')),
     color='Trust'
 )
 
@@ -217,7 +217,7 @@ altair.Chart(
     all_foi_weekly_trimmed.groupby(['Week beginning', 'Trust']).sum().reset_index()
 ).mark_area().encode(
     x=altair.X(field='Week beginning', type='temporal'),
-    y=altair.Y(field='ICU Occupied', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Occupied Bed Days')),
+    y=altair.Y(field='Critical Care Occupied', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Critical Care Occupied Bed Days')),
     color='Trust'
 )
 
@@ -225,21 +225,22 @@ altair.Chart(
 cc_hospitals = ['Altnagelvin Hospital','Antrim Area Hospital', 'Belfast City Hospital', 'Causeway Hospital', 'Craigavon Area Hospital', 'Mater Infirmorum Hospital', 'Royal Belfast Hospital for Sick Children', 'Royal Victoria Hospital', 'South West Acute Hospital', 'Ulster Hospital']
 
 # %%
-altair.Chart(
+p = altair.Chart(
     all_foi_weekly_trimmed.groupby(['Week beginning', 'Trust']).sum().reset_index()
 ).mark_area().encode(
     x=altair.X(field='Week beginning', type='temporal'),
-    y=altair.Y(field='ICU Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Available Bed Days')),
+    y=altair.Y(field='Critical Care Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Critical Care Available Bed Days')),
     color='Trust'
 )
 
 # %%
-foi_icu_hospital = (all_foi_weekly_trimmed[all_foi_weekly_trimmed['Hospital'].isin(cc_hospitals)].groupby(['Week beginning', 'Hospital']).sum() / 7)[['ICU Occupied','ICU Available']].reset_index().melt(id_vars=['Hospital','Week beginning'],var_name=['Status'])
-altair.Chart(
-    foi_icu_hospital[foi_icu_hospital['Week beginning'] < foi_icu_hospital['Week beginning'].max()]
+foi_icu_hospital = (all_foi_weekly_trimmed[all_foi_weekly_trimmed['Hospital'].isin(cc_hospitals)].groupby(['Week beginning', 'Hospital']).sum() / 7)[['Critical Care Occupied','Critical Care Available']].reset_index().melt(id_vars=['Hospital','Week beginning'],var_name=['Status'])
+foi_icu_hospital['Status'] = foi_icu_hospital['Status'].replace({'Critical Care Available': 'Available', 'Critical Care Occupied': 'Occupied'})
+p = altair.Chart(
+    foi_icu_hospital[(foi_icu_hospital['Week beginning'] < foi_icu_hospital['Week beginning'].max()) & (foi_icu_hospital['Hospital'].isin(['Altnagelvin Hospital','Antrim Area Hospital']))]
 ).mark_line().encode(
     x=altair.X(field='Week beginning', type='temporal'),
-    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Beds')),
+    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Critical Care Beds')),
     color='Status',
     row=altair.Row('Hospital',type='ordinal')
 ).properties(
@@ -247,14 +248,17 @@ altair.Chart(
 ).resolve_scale(
     y='independent'
 )
+p.save('cc-alt-ant-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+p
 
 # %%
-foi_icu_trust = (all_foi_weekly_trimmed.groupby(['Week beginning', 'Trust']).sum() / 7)[['ICU Occupied','ICU Available']].reset_index().melt(id_vars=['Trust','Week beginning'],var_name=['Status'])
-altair.Chart(
+foi_icu_trust = (all_foi_weekly_trimmed.groupby(['Week beginning', 'Trust']).sum() / 7)[['Critical Care Occupied','Critical Care Available']].reset_index().melt(id_vars=['Trust','Week beginning'],var_name=['Status'])
+foi_icu_trust['Status'] = foi_icu_trust['Status'].replace({'Critical Care Available': 'Available', 'Critical Care Occupied': 'Occupied'})
+p = altair.Chart(
     foi_icu_trust[(foi_icu_trust['Week beginning'] < foi_icu_trust['Week beginning'].max()) & (foi_icu_trust['Week beginning'] > foi_icu_trust['Week beginning'].min())]
 ).mark_line().encode(
     x=altair.X(field='Week beginning', type='temporal'),
-    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Beds')),
+    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Critical Care Beds')),
     color=altair.Color('Status',title=None),
     row=altair.Row('Trust',type='ordinal')
 ).properties(
@@ -262,6 +266,8 @@ altair.Chart(
 ).resolve_scale(
     y='independent'
 )
+p.save('cc-trusts-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+p
 
 # %% [markdown]
 # ## Load the COVID-era ICU/General beds data from the DoH sheet
@@ -269,23 +275,23 @@ altair.Chart(
 # * Data needs to be interpolated to account for missing (Christmas/New Year)
 # * General beds data needs to take into account the change in reporting on 18/10/2021
 # * General beds is also interpolated to include the reporting change day
-covid_icu = pandas.read_excel('../data/doh-dd-220421_0.xlsx', engine='openpyxl', sheet_name='ICU')
+covid_icu = pandas.read_excel('../data/doh-dd-160621.xlsx', engine='openpyxl', sheet_name='ICU')
 covid_icu.interpolate(inplace=True)
-covid_icu['ICU Occupied'] = covid_icu['Confirmed COVID Occupied'] + covid_icu['Non COVID Occupied']
-covid_icu['ICU Available'] = covid_icu['Confirmed COVID Occupied'] + covid_icu['Non COVID Occupied'] + covid_icu['Unoccupied Beds']
+covid_icu['Critical Care Occupied'] = covid_icu['Confirmed COVID Occupied'] + covid_icu['Non COVID Occupied']
+covid_icu['Critical Care Available'] = covid_icu['Confirmed COVID Occupied'] + covid_icu['Non COVID Occupied'] + covid_icu['Unoccupied Beds']
 covid_icu['date'] = pandas.to_datetime(covid_icu['Date'], format='%Y-%m-%d')
-covid_icu = covid_icu[['date','ICU Occupied','ICU Available']].set_index('date')
+covid_icu = covid_icu[['date','Critical Care Occupied','Critical Care Available']].set_index('date')
 newind = pandas.date_range(start=covid_icu.index.min(), end=covid_icu.index.max())
 covid_icu = covid_icu.reindex(newind).interpolate()
-covid_nonicu = pandas.read_excel('../data/doh-dd-220421_0.xlsx', engine='openpyxl', sheet_name='General Beds')
+covid_nonicu = pandas.read_excel('../data/doh-dd-160621.xlsx', engine='openpyxl', sheet_name='General Beds')
 covid_nonicu.dropna(axis='columns', how='all', inplace=True)
 covid_nonicu['Confirmed COVID Occupied'] = covid_nonicu['Confirmed COVID Occupied'].replace('Break in Series - See Notes on Dashboard', 'NaN').astype('float')
 covid_nonicu.interpolate(inplace=True)
 covid_nonicu['date'] = pandas.to_datetime(covid_nonicu['Date'], format='%Y-%m-%d')
 covid_nonicu.fillna(0, inplace=True)
-covid_nonicu['Non ICU Occupied'] = covid_nonicu['Confirmed COVID Occupied'] + covid_nonicu['Non-COVID Occupied'] + covid_nonicu['Awaiting Admission']
-covid_nonicu['Non ICU Available'] = covid_nonicu['Confirmed COVID Occupied'] + covid_nonicu['Non-COVID Occupied'] + covid_nonicu['Awaiting Admission'] + covid_nonicu['Unoccupied Beds']
-covid_nonicu = covid_nonicu[['date','Non ICU Occupied','Non ICU Available']].set_index('date')
+covid_nonicu['General Occupied'] = covid_nonicu['Confirmed COVID Occupied'] + covid_nonicu['Non-COVID Occupied'] + covid_nonicu['Awaiting Admission']
+covid_nonicu['General Available'] = covid_nonicu['Confirmed COVID Occupied'] + covid_nonicu['Non-COVID Occupied'] + covid_nonicu['Awaiting Admission'] + covid_nonicu['Unoccupied Beds']
+covid_nonicu = covid_nonicu[['date','General Occupied','General Available']].set_index('date')
 newind = pandas.date_range(start=covid_nonicu.index.min(), end=covid_nonicu.index.max())
 covid_nonicu = covid_nonicu.reindex(newind).interpolate()
 covid_daily = covid_icu.merge(covid_nonicu, how='left', left_index=True, right_index=True).reset_index()
@@ -316,30 +322,137 @@ all_weekly['Week'] = all_weekly['Week beginning'].dt.isocalendar().week
 all_weekly = all_weekly[all_weekly['Week beginning'] < all_weekly['Week beginning'].max()]
 
 # %%
-all_icu = (all_weekly.groupby(['Week beginning','Week','Year']).sum())[['ICU Occupied','ICU Available']].reset_index().melt(id_vars=['Week beginning','Week','Year'],var_name=['Status'])
-altair.Chart(
+all_icu = (all_weekly.groupby(['Week beginning','Week','Year']).sum())[['Critical Care Occupied','Critical Care Available']].reset_index().melt(id_vars=['Week beginning','Week','Year'],var_name=['Status'])
+all_icu['Status'] = all_icu['Status'].replace({'Critical Care Available': 'Available', 'Critical Care Occupied': 'Occupied'})
+p = altair.Chart(
     all_icu
 ).mark_line().encode(
     x=altair.X(r'monthdate(Week beginning):T', axis=altair.Axis(title='Week of year')),
-    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Beds')),
+    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='')),
     color=altair.Color('Status',title=None),
     row=altair.Row('Year',type='ordinal')
+).properties(
+    height=90,
+    title='NI Critical Care Beds by Year'
+)
+p.save('cc-all-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+p
+
+
+# %%
+all_gen = (all_weekly.groupby(['Week beginning','Week','Year']).sum())[['General Occupied','General Available']].reset_index().melt(id_vars=['Week beginning','Week','Year'],var_name=['Status'])
+all_gen['Status'] = all_gen['Status'].replace({'General Available': 'Available', 'General Occupied': 'Occupied'})
+p = altair.Chart(
+    all_gen
+).mark_line().encode(
+    x=altair.X(r'monthdate(Week beginning):T', axis=altair.Axis(title='Week of year')),
+    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='')),
+    color=altair.Color('Status',title=None),
+    row=altair.Row('Year',type='ordinal')
+).properties(
+    height=90,
+    title='NI General Beds by Year'
+)
+p.save('g-all-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+p
+
+# %%
+p = altair.Chart(
+    all_gen[all_gen['Week beginning'] < '2020-02-01']
+).mark_line().encode(
+    x=altair.X(r'monthdate(Week beginning):T', axis=altair.Axis(title='Week of year')),
+    y=altair.Y(
+        field='value',
+        type='quantitative',
+        aggregate='sum',
+        axis=altair.Axis(format=',d', title='General Beds'),
+        scale=altair.Scale(zero=False),
+    ),
+    color=altair.Color('Status',title=None),
+    row=altair.Row('Year',type='ordinal'),
 ).properties(
     height=90
 )
 
 # %%
-all_gen = (all_weekly.groupby(['Week beginning','Week','Year']).sum())[['Non ICU Occupied','Non ICU Available']].reset_index().melt(id_vars=['Week beginning','Week','Year'],var_name=['Status'])
-altair.Chart(
-    all_gen
-).mark_line().encode(
-    x=altair.X(r'monthdate(Week beginning):T', axis=altair.Axis(title='Week of year')),
-    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='General Beds')),
-    color=altair.Color('Status',title=None),
-    row=altair.Row('Year',type='ordinal')
+all_gen['Reporting change'] = '2020-10-18'
+reporting_change = [{'Date': '2020-10-18', 'event': 'Reporting change'}]
+reporting_change = pandas.DataFrame(reporting_change)
+p = altair.layer(
+    altair.Chart(
+        reporting_change
+    ).mark_rule().encode(
+        x=altair.X('Date:T', axis=altair.Axis(title=''))
+    ),
+    altair.Chart(
+        reporting_change
+    ).mark_text(
+        dy=-5,
+        angle=270
+    ).encode(
+        x=altair.X('Date:T', axis=altair.Axis(title='')),
+        text='event'
+    ),
+    altair.Chart(
+        all_gen[all_gen['Week beginning'] > '2020-02-01']
+    ).mark_line().encode(
+        x=altair.X('Week beginning:T'),
+        y=altair.Y(
+            field='value',
+            type='quantitative',
+            aggregate='sum',
+            axis=altair.Axis(format=',d', title='General Beds'),
+#            scale=altair.Scale(zero=False),
+        ),
+        color=altair.Color('Status',title=None)
+    ),
 ).properties(
-    height=90
+    height=450,
+    width=800,
+    title='NI general beds during COVID-19 pandemic',
 )
+p.save('g-covid-19-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+p
+
+
+# %%
+p = altair.Chart(
+    all_icu[all_icu['Week beginning'] > '2020-02-01']
+).mark_line().encode(
+    x=altair.X('Week beginning:T'),
+    y=altair.Y(field='value', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Critical Care Beds')),
+    color=altair.Color('Status',title=None)
+).properties(
+    height=450,
+    width=800,
+    title='NI critical care beds during COVID-19 pandemic',
+)
+p.save('cc-covid-19-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+p
+
+# %%
+pct_occ = all_weekly.groupby(['Week beginning','Week','Year']).sum()[['General Occupied','General Available']].reset_index()
+pct_occ['value'] = pct_occ['General Occupied']/pct_occ['General Available']
+p = altair.Chart(
+    pct_occ[pct_occ['Week beginning'] > '2020-12-31']
+).mark_line().encode(
+    x=altair.X('Week beginning:T'),
+    y=altair.Y(
+        field='value',
+        type='quantitative',
+        axis=altair.Axis(format='%', title='Critical Care Beds % Occupied'),
+        scale=altair.Scale(domain=[0.9,1])
+    )
+).properties(
+    height=450,
+    width=800,
+    title='NI general beds % occupied in 2021',
+)
+p.save('g-2021-19-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+p
+
+# %%
+all_weekly[all_weekly['Week beginning']<'2020-02-01']['Critical Care Available'].max()
 
 # %%
 altair.vconcat(*[
@@ -347,29 +460,30 @@ altair.vconcat(*[
         all_weekly
     ).mark_line().encode(
         x=altair.X('monthdate(Week beginning):T', axis=None),
-        y=altair.Y(field='ICU Occupied', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Occupied Beds')),
+        y=altair.Y(field='Critical Care Occupied', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Critical Care Occupied Beds')),
         color='Year:O'
     ),
     altair.Chart(
         all_weekly
     ).mark_line().encode(
         x=altair.X('monthdate(Week beginning):T', axis=None),
-        y=altair.Y(field='ICU Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='ICU Available Beds')),
+        y=altair.Y(field='Critical Care Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Critical Care Available Beds')),
         color='Year:O'
     ),
     altair.Chart(
         all_weekly
     ).mark_line().encode(
         x=altair.X('monthdate(Week beginning):T', axis=None),
-        y=altair.Y(field='Non ICU Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Non-ICU Available Beds')),
+        y=altair.Y(field='General Available', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Non-Critical Care Available Beds')),
         color='Year:O'
     ),
     altair.Chart(
         all_weekly
     ).mark_line().encode(
         x=altair.X('monthdate(Week beginning):T', axis=altair.Axis(title='Date')),
-        y=altair.Y(field='Non ICU Occupied', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Non-ICU Occupied Beds')),
+        y=altair.Y(field='General Occupied', type='quantitative', aggregate='sum', axis=altair.Axis(format=',d', title='Non-Critical Care Occupied Beds')),
         color='Year:O'
     )
 ])
 
+# %%
