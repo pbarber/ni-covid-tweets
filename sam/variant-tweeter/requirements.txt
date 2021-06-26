@@ -1,4 +1,4 @@
 requests
 numpy==1.20.2
-pandas
+pandas==1.2.4
 tweepy
