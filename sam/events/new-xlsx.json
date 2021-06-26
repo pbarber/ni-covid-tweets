@@ -5,6 +5,7 @@
         "length": 2154425,
         "filedate": "2021-04-22",
         "keyname": "DoH-DD/2021-04-22/2021-04-22T13_09_42-2172614.xlsx",
-        "notweet": true
+        "notweet": false,
+        "tweet": false
     }
 ]

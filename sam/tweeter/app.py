@@ -128,7 +128,7 @@ def lambda_handler(event, context):
                     deaths_7d=totals['deaths'] - lastweek['totals']['deaths']
                 )
 
-        tweets.append({'text': tweet, 'text2': tweet2, 'url': change['url'], 'notweet': change.get('notweet'), 'totals': totals, 'filedate': change['filedate']})
+        tweets.append({'text': tweet, 'text2': tweet2, 'url': change['url'], 'notweet': change.get('notweet'), 'tweet': change.get('tweet'), 'totals': totals, 'filedate': change['filedate']})
 
     donottweet = []
     if len(tweets) > 1:
@@ -143,11 +143,15 @@ def lambda_handler(event, context):
         if t.get('notweet') is not True:
             if (idx not in donottweet):
                 api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-                resp = api.tweet(t['text'] + t['url'])
-                messages.append('Tweeted ID %s, ' %resp.id)
-                if t['text2'] is not None:
-                    resp = api.tweet(t['text2'], resp.id)
-                    messages[-1] += ('ID %s, ' %resp.id)
+                if t.get('tweet', True) is True:
+                    resp = api.tweet(t['text'] + t['url'])
+                    messages.append('Tweeted ID %s, ' %resp.id)
+                    if t['text2'] is not None:
+                        resp = api.tweet(t['text2'], resp.id)
+                        messages[-1] += ('ID %s, ' %resp.id)
+                else:
+                    resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'], )
+                    messages.append('Tweeted DM %s, ' %resp.id)
             else:
                 messages.append('Duplicate found %s, did not tweet, ' %t['filedate'])
 
