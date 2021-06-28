@@ -4,6 +4,8 @@ import datetime
 
 import boto3
 import pandas
+import numpy
+import altair
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
@@ -13,15 +15,112 @@ bad_symb = '\u2191'
 
 def find_previous(df, newest, colname):
     # Find the date since which the rate was as high/low
-    gte = df.iloc[df[(df[colname] >= newest[colname]) & (df['Sample_Date'] < newest['Sample_Date'])]['Sample_Date'].idxmax()]
-    lt = df.iloc[df[(df[colname] < newest[colname]) & (df['Sample_Date'] < newest['Sample_Date'])]['Sample_Date'].idxmax()]
-    if gte['Sample_Date'] < lt['Sample_Date']:
-        est = bad_symb + ' highest'
-        prev = gte['printdate']
+    gte = df[(df[colname] >= newest[colname]) & (df['Sample_Date'] < newest['Sample_Date'])]
+    lt = df[(df[colname] < newest[colname]) & (df['Sample_Date'] < newest['Sample_Date'])]
+    if len(gte)>0:
+        gte = df.iloc[gte['Sample_Date'].idxmax()]
     else:
-        est = good_symb + ' lowest'
-        prev = lt['printdate']
+        return bad_symb, 'highest ever'
+    if len(lt)>0:
+        lt = df.iloc[lt['Sample_Date'].idxmax()]
+    else:
+        return good_symb, 'lowest ever'
+    if gte['Sample_Date'] < lt['Sample_Date']:
+        est = bad_symb
+        diff = (newest['Sample_Date'] - gte['Sample_Date']).days
+        prev = 'highest for %s day%s' %(diff,'s' if diff > 1 else '')
+    else:
+        est = good_symb
+        diff = (newest['Sample_Date'] - lt['Sample_Date']).days
+        prev = 'lowest for %s day%s' %(diff,'s' if diff > 1 else '')
     return est, prev
+
+def calc_exp_fit0(data):
+    curve = numpy.polyfit(data.index, numpy.log(data.values), 1)
+    return curve[0]
+
+def calc_exp_fit1(data):
+    curve = numpy.polyfit(data.index, numpy.log(data.values), 1)
+    return curve[1]
+
+def fit_exp(curve0, curve1, value):
+    return (numpy.exp(curve1) * numpy.exp(curve0 * value))
+
+def create_model(df, to_model, datekey):
+    df['x'] = (df[datekey] - df[datekey].min()).dt.days
+    df.set_index('x', inplace=True)
+    df['%s model0'%to_model] = df.rolling(window=9, center=True)[to_model].apply(calc_exp_fit0)
+    df['%s model1'%to_model] = df.rolling(window=9, center=True)[to_model].apply(calc_exp_fit1)
+    df['%s model_daily_change' %to_model] = (fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 2) - fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)) / fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)
+    df['%s model_weekly_change' %to_model] = (fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 8) - fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)) / fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)
+    return(df)
+
+# %%
+def plot_points_average_and_trend(df, colour, date):
+    df1 = df[(~df['INDIVIDUALS TESTED POSITIVE'].isna()) & (df['INDIVIDUALS TESTED POSITIVE'] != 0)]
+    df2 = df[(~df['New cases 7-day rolling mean'].isna()) & (df['New cases 7-day rolling mean'] != 0)]
+    return altair.concat(altair.layer(
+        altair.Chart(
+            df1
+        ).mark_point(
+            color=colour,
+            opacity=0.7,
+            filled=True,
+            size=15,
+        ).encode(
+            x=altair.X(
+                field='Sample_Date',
+                type='temporal',
+                axis=altair.Axis(title='Specimen Date'),
+            ),
+            y=altair.Y(
+                field='INDIVIDUALS TESTED POSITIVE',
+                type='quantitative',
+                aggregate='sum',
+                axis=altair.Axis(title='Individuals tested positive'),
+                scale=altair.Scale(
+                    type='log'
+                ),
+            )
+        ),
+        altair.Chart(
+            df2
+        ).mark_line(
+            color=colour
+        ).encode(
+            x=altair.X(
+                field='Sample_Date',
+                type='temporal'
+            ),
+            y=altair.Y(
+                field='New cases 7-day rolling mean',
+                type='quantitative',
+                aggregate='sum',
+                scale=altair.Scale(
+                    type='log'
+                ),
+                axis=altair.Axis(title=''),
+            )
+        ),
+    ).properties(
+        title=altair.TitleParams(
+            ['Dots show daily case reports, line is 7-day rolling average',
+            'https://twitter.com/ni_covid19_data'],
+            baseline='bottom',
+            orient='bottom',
+            anchor='end',
+            fontWeight='normal',
+            fontSize=10,
+            dy=10
+        ),
+        height=450,
+        width=800
+    )).properties(
+        title=altair.TitleParams(
+            'NI COVID-19 cases (daily and 7-day mean) reported on %s' %date,
+            anchor='middle',
+        )
+    )
 
 def lambda_handler(event, context):
     # Get the secret
@@ -46,14 +145,30 @@ def lambda_handler(event, context):
         df['rolling_pos_rate'] = df['ROLLING 7 DAY POSITIVE TESTS']/df['ROLLING 7 DAY INDIVIDUALS TESTED']
         df['printdate']=df['Sample_Date'].dt.strftime('%-d %B %Y')
         df['rolling_7d_change'] = (df['ROLLING 7 DAY POSITIVE TESTS'] - df['ROLLING 7 DAY POSITIVE TESTS'].shift(7)) * 7
+        df['New cases 7-day rolling mean'] = df['INDIVIDUALS TESTED POSITIVE'].rolling(7, center=True).mean()
+        df.set_index('Sample_Date', inplace=True)
+        newind = pandas.date_range(start=df.index.min(), end=df.index.max())
+        df = df.reindex(newind)
+        df.index.name = 'Sample_Date'
+        df.reset_index(inplace=True)
+        df['Rolling cases per 100k'] = 100000 * (df['New cases 7-day rolling mean'] / 1893667)
+        df = create_model(df,'Rolling cases per 100k','Sample_Date')
 
         # Get the latest dates with values for tests and rolling
         latest = df.iloc[df['Sample_Date'].idxmax()]
-        latest_7d = df.iloc[df[df['rolling_pos_rate'].notna()]['Sample_Date'].idxmax()]
+        latest_7d = df.iloc[df[df['ROLLING 7 DAY POSITIVE TESTS'].notna()]['Sample_Date'].idxmax()]
+        latest_model = df.iloc[df[df['Rolling cases per 100k model_daily_change'].notna()]['Sample_Date'].idxmax()]
+        last_but1_model = df.iloc[df[(df['Rolling cases per 100k model_daily_change'].notna()) & (df['Sample_Date'] != latest_model['Sample_Date'])]['Sample_Date'].idxmax()]
+
+        # Plot the case reports and 7-daye average
+        p = plot_points_average_and_trend(df[(df['Sample_Date'] > (latest['Sample_Date'] - pandas.to_timedelta(42, unit='d')))],'#076543',latest['Sample_Date'].strftime('%A %-d %B %Y'))
+        plotstore = io.BytesIO()
+        p.save(fp=plotstore, format='png')
+        plotstore.seek(0)
+        plotname = 'ni-cases-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
 
         # Find the date since which the rate was as high/low
-        est, prev = find_previous(df, latest, 'pos_rate')
-        est_7d, prev_7d = find_previous(df, latest_7d, 'rolling_pos_rate')
+        symb_7d, est = find_previous(df, latest_7d, 'ROLLING 7 DAY POSITIVE TESTS')
 
         # Summary stats to allow 'X registered in last 24 hours' info
         deaths = pandas.read_excel(stream,engine='openpyxl',sheet_name='Deaths')
@@ -70,29 +185,26 @@ def lambda_handler(event, context):
 
         # Build the tweet text
         tweet = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive on {date}
-{est} rate since {prev}
 
-{pos_rate_7d:.2%} 7-day positivity rate
-{est_7d} since {prev_7d}
+{symb_7d} {pos_7d:,} positive in last 7 days, {est}
 
-{pos_7d:,} positive in last 7 days
-{tag_7d} {dif_7d:,} {dir_7d} than preceding 7 days ({pct_7d:.2%})
+{tag_model} cases {dir_model} by {model_daily:.1%} per day, {model_weekly:.1%} per week, {doub} time {doub_time:.1f} days
 
 '''.format(
             date=latest['Sample_Date'].strftime('%A %-d %B %Y'),
-            ind_positive=latest['INDIVIDUALS TESTED POSITIVE'],
-            ind_tested=latest['ALL INDIVIDUALS TESTED'],
+            ind_positive=int(latest['INDIVIDUALS TESTED POSITIVE']),
+            ind_tested=int(latest['ALL INDIVIDUALS TESTED']),
             pos_rate=latest['pos_rate'],
+            symb_7d=symb_7d,
             est=est,
-            prev=prev,
-            pos_rate_7d=latest_7d['rolling_pos_rate'],
-            est_7d=est_7d,
-            prev_7d=prev_7d,
+            model_daily=last_but1_model['Rolling cases per 100k model_daily_change'],
+            model_weekly=last_but1_model['Rolling cases per 100k model_weekly_change'],
             pos_7d=int(round(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7,0)),
-            tag_7d=good_symb if int(round(latest_7d['rolling_7d_change'],0))<0 else bad_symb,
-            dir_7d='fewer' if int(round(latest_7d['rolling_7d_change'],0))<0 else 'more',
-            dif_7d=int(abs(round(latest_7d['rolling_7d_change'],0))),
-            pct_7d=latest_7d['rolling_7d_change']/(latest_7d['rolling_7d_change']+(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7)))
+            dir_model='falling' if last_but1_model['Rolling cases per 100k model_daily_change']<0 else 'rising',
+            tag_model=good_symb if last_but1_model['Rolling cases per 100k model_daily_change']<0 else bad_symb,
+            doub='halving' if (last_but1_model['Rolling cases per 100k model0'] < 0) else 'doubling',
+            doub_time=abs(numpy.log(2)/last_but1_model['Rolling cases per 100k model0'])
+        )
 
         # If we have the data for it, build the second tweet
         last_week = datetime.datetime.strptime(change['filedate'],'%Y-%m-%d').date() - datetime.timedelta(days=7)
@@ -128,7 +240,17 @@ def lambda_handler(event, context):
                     deaths_7d=totals['deaths'] - lastweek['totals']['deaths']
                 )
 
-        tweets.append({'text': tweet, 'text2': tweet2, 'url': change['url'], 'notweet': change.get('notweet'), 'tweet': change.get('tweet'), 'totals': totals, 'filedate': change['filedate']})
+        tweets.append({
+            'text': tweet,
+            'text2': tweet2,
+            'url': change['url'],
+            'notweet': change.get('notweet'),
+            'tweet': change.get('tweet'),
+            'totals': totals,
+            'filedate': change['filedate'],
+            'plotname': plotname,
+            'plot': plotstore
+        })
 
     donottweet = []
     if len(tweets) > 1:
@@ -142,15 +264,21 @@ def lambda_handler(event, context):
         t = tweets[idx]
         if t.get('notweet') is not True:
             if (idx not in donottweet):
-                api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+                api = TwitterAPI(
+                    secret['twitter_apikey'],
+                    secret['twitter_apisecretkey'],
+                    secret['twitter_accesstoken'],
+                    secret['twitter_accesstokensecret']
+                )
+                resp = api.upload(t['plot'], t['plotname'])
                 if t.get('tweet', True) is True:
-                    resp = api.tweet(t['text'] + t['url'])
+                    resp = api.tweet(t['text'] + t['url'], media_ids=[resp.media_id])
                     messages.append('Tweeted ID %s, ' %resp.id)
                     if t['text2'] is not None:
                         resp = api.tweet(t['text2'], resp.id)
                         messages[-1] += ('ID %s, ' %resp.id)
                 else:
-                    resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'], )
+                    resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'], resp.media_id)
                     messages.append('Tweeted DM %s, ' %resp.id)
             else:
                 messages.append('Duplicate found %s, did not tweet, ' %t['filedate'])

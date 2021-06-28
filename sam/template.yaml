@@ -37,13 +37,16 @@ Resources:
   NICOVIDTweeter:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: tweeter/
-      Handler: app.lambda_handler
-      Runtime: python3.8
+      PackageType: Image
+      MemorySize: 1024
       Timeout: 120
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
         MaximumRetryAttempts: 0
+    Metadata:
+      DockerTag: tweeter-tag
+      DockerContext: ./
+      Dockerfile: tweeter/Dockerfile
   NICOVIDVaccineTweeter:
     Type: AWS::Serverless::Function
     Properties:
