@@ -1,11 +1,14 @@
 import json
 import io
 import datetime
+import os
+import logging
 
 import boto3
 import pandas
 import numpy
 import altair
+from selenium import webdriver
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
@@ -160,12 +163,45 @@ def lambda_handler(event, context):
         latest_model = df.iloc[df[df['Rolling cases per 100k model_daily_change'].notna()]['Sample_Date'].idxmax()]
         last_but1_model = df.iloc[df[(df['Rolling cases per 100k model_daily_change'].notna()) & (df['Sample_Date'] != latest_model['Sample_Date'])]['Sample_Date'].idxmax()]
 
-        # Plot the case reports and 7-daye average
-        p = plot_points_average_and_trend(df[(df['Sample_Date'] > (latest['Sample_Date'] - pandas.to_timedelta(42, unit='d')))],'#076543',latest['Sample_Date'].strftime('%A %-d %B %Y'))
+        # Plot the case reports and 7-day average
+        options = webdriver.ChromeOptions()
+        options.headless = True
+        options.add_argument('--no-sandbox')
+        options.add_argument('--disable-dev-shm-usage')
+        options.add_argument("--window-size=1280,720")
+        options.add_argument("--disable-gpu")
+        options.add_argument("--hide-scrollbars")
+        options.add_argument("--disable-infobars")
+        options.add_argument("--enable-logging")
+        options.add_argument("--log-level=0")
+        options.add_argument("--v=99")
+        options.add_argument("--single-process")
+        options.add_argument("--user-data-dir=/tmp/user-data/")
+        options.add_argument("--data-path=/tmp/data/")
+        options.add_argument("--homedir=/tmp/homedir/")
+        options.add_argument("--disk-cache-dir=/tmp/disk-cache/")
+        options.add_argument("--disable-async-dns")
+        plotname = None
         plotstore = io.BytesIO()
-        p.save(fp=plotstore, format='png')
-        plotstore.seek(0)
-        plotname = 'ni-cases-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
+        try:
+            driver = webdriver.Chrome(service_log_path='/tmp/chromedriver.log', options=options)
+        except:
+            logging.exception('Failed to setup chromium')
+            with open('/tmp/chromedriver.log') as log:
+                logging.warning(log.read())
+            logging.error([f for f in os.listdir('/tmp/')])
+        else:
+            p = plot_points_average_and_trend(df[(df['Sample_Date'] > (latest['Sample_Date'] - pandas.to_timedelta(42, unit='d')))],'#076543',latest['Sample_Date'].strftime('%A %-d %B %Y'))
+            try:
+                p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+            except:
+                logging.exception('Failed to output plot')
+                with open('/tmp/chromedriver.log') as log:
+                    logging.warning(log.read())
+                logging.error([f for f in os.listdir('/tmp/')])
+            else:
+                plotstore.seek(0)
+                plotname = 'ni-cases-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
 
         # Find the date since which the rate was as high/low
         symb_7d, est = find_previous(df, latest_7d, 'ROLLING 7 DAY POSITIVE TESTS')
@@ -270,15 +306,22 @@ def lambda_handler(event, context):
                     secret['twitter_accesstoken'],
                     secret['twitter_accesstokensecret']
                 )
-                resp = api.upload(t['plot'], t['plotname'])
+                if t['plotname'] is not None:
+                    resp = api.upload(t['plot'], t['plotname'])
                 if t.get('tweet', True) is True:
-                    resp = api.tweet(t['text'] + t['url'], media_ids=[resp.media_id])
+                    if t['plotname'] is not None:
+                        resp = api.tweet(t['text'] + t['url'], media_ids=[resp.media_id])
+                    else:
+                        resp = api.tweet(t['text'] + t['url'])
                     messages.append('Tweeted ID %s, ' %resp.id)
                     if t['text2'] is not None:
                         resp = api.tweet(t['text2'], resp.id)
                         messages[-1] += ('ID %s, ' %resp.id)
                 else:
-                    resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'], resp.media_id)
+                    if t['plotname'] is not None:
+                        resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'], resp.media_id)
+                    else:
+                        resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'])
                     messages.append('Tweeted DM %s, ' %resp.id)
             else:
                 messages.append('Duplicate found %s, did not tweet, ' %t['filedate'])

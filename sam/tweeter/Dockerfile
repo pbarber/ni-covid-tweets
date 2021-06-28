@@ -3,7 +3,7 @@ FROM public.ecr.aws/lambda/python:3.8
 RUN yum -y install amazon-linux-extras
 RUN PYTHON=python2 amazon-linux-extras enable epel -y
 RUN yum -y install epel-release wget unzip
-RUN yum -y install chromium
+RUN yum -y install chromium-90.0.4430.212
 RUN wget -P /tmp/ https://chromedriver.storage.googleapis.com/90.0.4430.24/chromedriver_linux64.zip
 RUN unzip /tmp/chromedriver_linux64.zip -d /tmp/
 RUN mv /tmp/chromedriver /usr/bin/chromedriver

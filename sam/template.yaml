@@ -38,11 +38,11 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
-      MemorySize: 1024
+      MemorySize: 2048
       Timeout: 120
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
-        MaximumRetryAttempts: 1
+        MaximumRetryAttempts: 0
     Metadata:
       DockerTag: tweeter-tag
       DockerContext: ./
