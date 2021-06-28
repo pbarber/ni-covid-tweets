@@ -28,13 +28,13 @@ Resources:
             Schedule: rate(10 minutes)
       Environment:
         Variables:
-          TWEETER_LAMBDA: !Sub ${NICOVIDTweeter.Arn}
+          TWEETER_LAMBDA: !Sub ${NICOVIDCasesTweeter.Arn}
           VACCINE_TWEETER_LAMBDA: !Sub ${NICOVIDVaccineTweeter.Arn}
           R_TWEETER_LAMBDA: !Sub ${NICOVIDRTweeter.Arn}
           NISRA_TWEETER_LAMBDA: !Sub ${NICOVIDNISRATweeter.Arn}
           GENERIC_TWEETER_LAMBDA: !Sub ${NICOVIDGenericTweeter.Arn}
           VARIANTS_TWEETER_LAMBDA: !Sub ${NICOVIDVariantsTweeter.Arn}
-  NICOVIDTweeter:
+  NICOVIDCasesTweeter:
     Type: AWS::Serverless::Function
     Properties:
       PackageType: Image
@@ -42,7 +42,7 @@ Resources:
       Timeout: 120
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
-        MaximumRetryAttempts: 0
+        MaximumRetryAttempts: 1
     Metadata:
       DockerTag: tweeter-tag
       DockerContext: ./
@@ -119,11 +119,11 @@ Resources:
       MemorySize: 2048
       EventInvokeConfig:
         MaximumRetryAttempts: 0
-      Events:
-        InvocationLevel:
-          Type: Schedule
-          Properties:
-            Schedule: rate(1 hour)
+#      Events:
+#        InvocationLevel:
+#          Type: Schedule
+#          Properties:
+#            Schedule: rate(1 hour)
     Metadata:
       DockerTag: selenium-v2
       DockerContext: ./
