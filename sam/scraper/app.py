@@ -276,12 +276,15 @@ def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
     # If there has been a change, then tweet
     change = False
     if hscchange and phechange and (phe[0]['Last Updated'] == hsc[0]['Last Updated']):
+        print('vaccines: both changed')
         chosen = phe[0]
         change = True
     elif hscchange and ((len(phe) == 0) or (hsc[0]['Last Updated'] > phe[0]['Last Updated'])):
+        print('vaccines: HSC changed')
         chosen = hsc[0]
         change = True
     elif phechange and ((len(hsc) == 0) or (phe[0]['Last Updated'] > hsc[0]['Last Updated'])):
+        print('vaccines: PHE changed')
         chosen = phe[0]
         change = True
 
