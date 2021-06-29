@@ -369,7 +369,7 @@ def check_for_cog_files(s3, bucketname, indexkey):
 
     found = []
     while today >= last:
-        url = "https://cog-uk-microreact.s3.climb.ac.uk/{today}/cog_metadata_microreact_geocodes_only.csv".format(today=today.isoformat())
+        url = "https://cog-uk-microreact.s3.climb.ac.uk/{today}/cog_metadata_microreact_uk_geocoded.csv".format(today=today.isoformat())
         resp = session.head(url)
         if (resp.headers['Content-Type'] == 'binary/octet-stream'):
             modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
