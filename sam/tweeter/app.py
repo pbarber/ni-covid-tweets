@@ -280,8 +280,8 @@ def lambda_handler(event, context):
             'text': tweet,
             'text2': tweet2,
             'url': change['url'],
-            'notweet': change.get('notweet'),
-            'tweet': change.get('tweet'),
+            'notweet': change.get('notweet', False),
+            'tweet': change.get('tweet', True),
             'totals': totals,
             'filedate': change['filedate'],
             'plotname': plotname,
@@ -298,7 +298,7 @@ def lambda_handler(event, context):
     messages = []
     for idx in reversed(range(len(tweets))):
         t = tweets[idx]
-        if t.get('notweet') is not True:
+        if t['notweet'] is False:
             if (idx not in donottweet):
                 api = TwitterAPI(
                     secret['twitter_apikey'],
@@ -308,7 +308,7 @@ def lambda_handler(event, context):
                 )
                 if t['plotname'] is not None:
                     resp = api.upload(t['plot'], t['plotname'])
-                if t.get('tweet', True) is True:
+                if t['tweet'] is True:
                     if t['plotname'] is not None:
                         resp = api.tweet(t['text'] + t['url'], media_ids=[resp.media_id])
                     else:
