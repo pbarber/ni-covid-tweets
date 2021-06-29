@@ -3,12 +3,14 @@
 This repository holds the source code for [an unofficial Twitter bot](https://twitter.com/ni_covid19_data) which summarises and posts data about COVID-19 in Northern Ireland (NI). The bot posts:
 
 * daily updates on vaccinations
-* daily updates on tests
-* weekly updates R number estimates
+* daily updates on tests and cases
+* weekly updates on R number estimates
+* weekly updates on NISRA deaths statistics
+* occasional interesting charts
 
 ## Vaccinations
 
-Vaccinations data is taken from either [HSCNI](https://covid-19.hscni.net/) or [PHE](https://coronavirus.data.gov.uk/), whichever posts first (generally HSCNI but both processes are manual so there is some variability).
+Vaccinations data is taken from either [HSCNI](https://covid-19.hscni.net/) or [PHE](https://coronavirus.data.gov.uk/), whichever posts first (generally HSCNI but both processes seem to be manual so there is some variability).
 
 HSCNI data is scraped from the front page of the website, PHE data is taken from the [API](https://coronavirus.data.gov.uk/details/download). PHE API fields used are:
 
@@ -17,24 +19,30 @@ HSCNI data is scraped from the front page of the website, PHE data is taken from
 * cumVaccinationFirstDoseUptakeByPublishDatePercentage
 * cumVaccinationSecondDoseUptakeByPublishDatePercentage
 
-## Tests
+## Tests and cases
 
-Tests data is taken from the daily Excel [downloads](https://www.health-ni.gov.uk/articles/covid-19-daily-dashboard-updates) of the NI Department of Health (DoH) dashboard. The information presented is taken from the `Summary Tests` tab.
+Tests and cases (aka positive tests) data is taken from the daily Excel [downloads](https://www.health-ni.gov.uk/articles/covid-19-daily-dashboard-updates) of the NI Department of Health (DoH) dashboard. The information presented is taken from the `Summary Tests`, `Deaths`, `Admissions` and `Discharges` tabs.
+
+The bot runs an exponential curve fitting model, using a 9-day window over the 7-day case average, to calculate the current growth rate of cases.
 
 Note that the DoH daily data is, in my opinion, somewhat flawed. The dashboard and download provide a count `All Individuals Tested` for each day, this is not all individuals tested on that day, but the total of individuals who were last tested on that day. So, if I have been tested twice, once in September 2020 and once in March 2021, then I was counted in the September figures up until March, when my count was moved to the March numbers.
 
-In addition, the daily tests reported can be considered incomplete for a number of days after the initial report. As in many parts of the world, NI data on negative tests moves slower than data on positive tests.
+In addition, the daily tests reported can be considered incomplete for a number of days after the initial report. As in many parts of the world, NI data on negative tests moves slower than data on positive tests. There's a [blog post](https://codeandnumbers.co.uk/data-dynamics-and-covid-19/) on this topic.
 
 ## R number
 
 The DoH publishes [R number estimates](https://www.health-ni.gov.uk/R-Number) once a week. The headlines of this report relative to R estimates are presented as is.
+
+## Deaths
+
+NISRA publishes [weekly deaths statistics](https://www.nisra.gov.uk/publications/weekly-death-statistics-northern-ireland-2021) when the number of deaths registered in a week is five or more.
 
 ## Architecture
 
 The bot is built using AWS infrastructure. The architecture is:
 
 * one 'scraper' for all data sources, running as a Python lambda function scheduled via EventBridge
-* three 'tweeters' for the three types of post, running as Python lambda functions triggered by the scraper when the data changes
+* four 'tweeters' for the four types of post, running as Python lambda functions triggered by the scraper when the data changes
 * an S3 bucket to hold the scraped data
 * an S3 bucket to hold the lambda function code
 * an ECR repository to hold the image for the R number tweeter, which requires PDF extraction
