@@ -399,7 +399,6 @@ def check_cog(secret, s3, notweet):
         message = 'Found file'
         print(latest)
         print('Launching COG variants tweeter')
-        latest['testtweet'] = True
         launch_lambda_async(os.getenv('VARIANTS_TWEETER_LAMBDA'),latest)
         message += ', and launched variants tweet lambda'
     else:
