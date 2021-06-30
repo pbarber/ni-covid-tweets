@@ -6,12 +6,42 @@ import logging
 import boto3
 import pandas
 import requests
+import altair
+from selenium import webdriver
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
+
+def setup_selenium():
+    options = webdriver.ChromeOptions()
+    options.headless = True
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument("--window-size=1280,720")
+    options.add_argument("--disable-gpu")
+    options.add_argument("--hide-scrollbars")
+    options.add_argument("--disable-infobars")
+    options.add_argument("--enable-logging")
+    options.add_argument("--log-level=0")
+    options.add_argument("--v=99")
+    options.add_argument("--single-process")
+    options.add_argument("--user-data-dir=/tmp/user-data/")
+    options.add_argument("--data-path=/tmp/data/")
+    options.add_argument("--homedir=/tmp/homedir/")
+    options.add_argument("--disk-cache-dir=/tmp/disk-cache/")
+    options.add_argument("--disable-async-dns")
+    try:
+        driver = webdriver.Chrome(service_log_path='/tmp/chromedriver.log', options=options)
+    except:
+        logging.exception('Failed to setup chromium')
+        with open('/tmp/chromedriver.log') as log:
+            logging.warning(log.read())
+        logging.error([f for f in os.listdir('/tmp/')])
+        raise
+    return driver
 
 def lambda_handler(event, context):
     messages = []
@@ -40,9 +70,32 @@ def lambda_handler(event, context):
         obj = s3.get_object(Bucket=secret['bucketname'],Key=keyname)['Body']
         stream = io.BytesIO(obj.read())
 
+        # Dataframe for converting between pago lineage and WHO labels
+        lineage_lookup = pandas.DataFrame([
+            {'WHO label': 'Alpha', 'Pango lineage': 'B.1.1.7'},
+            {'WHO label': 'Beta', 'Pango lineage': 'B.1.351'},
+            {'WHO label': 'Gamma', 'Pango lineage': 'P.1'},
+            {'WHO label': 'Delta', 'Pango lineage': 'B.1.617.2'},
+            {'WHO label': 'Epsilon', 'Pango lineage': 'B.1.427'},
+            {'WHO label': 'Zeta', 'Pango lineage': 'P.2'},
+            {'WHO label': 'Eta', 'Pango lineage': 'B.1.525'},
+            {'WHO label': 'Theta', 'Pango lineage': 'P.3'},
+            {'WHO label': 'Iota', 'Pango lineage': 'B.1.526'},
+            {'WHO label': 'Kappa', 'Pango lineage': 'B.1.617.1'},
+            {'WHO label': 'Lambda', 'Pango lineage': 'C.37'},
+        ])
+
         # Load variant data, aggregate and push back to S3
         df = pandas.read_csv(stream)
         df = df[df['adm1']=='UK-NIR']
+        df['Sample Date'] = pandas.to_datetime(df['sample_date'])
+        df['Week of sample'] = df['Sample Date'] - pandas.to_timedelta(df['Sample Date'].dt.dayofweek, unit='d')
+        df = df.merge(lineage_lookup, how='left', left_on='lineage', right_on='Pango lineage')
+        df['WHO label'] = df['WHO label'].fillna('Other')
+        lin_by_week = df.groupby(['Week of sample','WHO label']).size().rename('count')
+        lin_pc_by_week = lin_by_week/lin_by_week.groupby(level=0).sum()
+        lin_by_week = pandas.DataFrame(lin_by_week).reset_index()
+        lin_pc_by_week = pandas.DataFrame(lin_pc_by_week).reset_index()
         lineage = df.groupby('lineage').size().reset_index(name='count')
         stream = io.BytesIO()
         lineage.to_csv(stream, index=False)
@@ -72,8 +125,10 @@ def lambda_handler(event, context):
             stream = io.BytesIO(obj.read())
             prev_lineage = pandas.read_csv(stream)
             lineage = lineage.merge(prev_lineage, how='left', left_on='lineage', right_on='lineage')
+            lineage = lineage.merge(lineage_lookup, how='left', left_on='lineage', right_on='Pango lineage')
+            lineage['WHO label'] = lineage['WHO label'].fillna('Other')
+            lineage = lineage.groupby('WHO label').sum()[['count_x','count_y']]
             lineage['diff'] = (lineage['count_x'] - lineage['count_y']).fillna(0).astype(int)
-            lineage.set_index('lineage', inplace=True)
             top5 = lineage.nlargest(5, 'diff')
             tweet = """{total:,d} new variant analyses reported for NI on {currdate} since {prevdate} ({altogether:,d} total):
 """.format(
@@ -90,13 +145,55 @@ def lambda_handler(event, context):
                 tweet += f"\u2022 Others: {others:,d}\n"
             tweet += '\nSource: https://beta.microreact.org/'
 
+            driver = setup_selenium()
+
+            p = altair.vconcat(
+                altair.Chart(
+                    lin_by_week[lin_by_week['Week of sample']>lin_by_week['Week of sample'].max()-pandas.to_timedelta(84, unit='d')]
+                ).mark_line().encode(
+                    x = altair.X('Week of sample:T', axis=altair.Axis(title='', labels=False, ticks=False)),
+                    y = altair.Y('count:Q', axis=altair.Axis(title='Samples')),
+                    color='WHO label'
+                ).properties(
+                    height=225,
+                    width=800,
+                    title='NI COVID-19 variants identified by COG-UK over the most recent 12 weeks'
+                ),
+                altair.Chart(
+                    lin_pc_by_week[lin_pc_by_week['Week of sample']>lin_pc_by_week['Week of sample'].max()-pandas.to_timedelta(84, unit='d')]
+                ).mark_area().encode(
+                    x = 'Week of sample:T',
+                    y = altair.Y('sum(count):Q', axis=altair.Axis(format='%', title='% of samples')),
+                    color='WHO label'
+                ).properties(
+                    height=225,
+                    width=800,
+                )
+            ).properties(
+                title=altair.TitleParams(
+                    ['Variant identification can take up to 3 weeks, so recent totals are likely to be revised upwards',
+                    'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
+                    baseline='bottom',
+                    orient='bottom',
+                    anchor='end',
+                    fontWeight='normal',
+                    fontSize=10,
+                    dy=10
+                ),
+            )
+            plotname = 'ni-variants-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m')
+            plotstore = io.BytesIO()
+            p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+            plotstore.seek(0)
+
             if event.get('notweet') is not True:
                 api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+                resp = api.upload(plotstore, plotname)
                 if event.get('testtweet') is True:
-                    resp = api.dm(secret['twitter_dmaccount'], tweet)
+                    resp = api.dm(secret['twitter_dmaccount'], tweet, resp.media_id)
                     messages.append('Tweeted DM ID %s, ' %resp.id)
                 else:
-                    resp = api.tweet(tweet)
+                    resp = api.tweet(tweet, media_ids=[resp.media_id])
                     messages.append('Tweeted ID %s, ' %resp.id)
                     # Update the file index
                     index[thisindex]['tweet'] = resp.id

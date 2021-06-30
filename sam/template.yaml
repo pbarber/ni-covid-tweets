@@ -33,7 +33,7 @@ Resources:
           R_TWEETER_LAMBDA: !Sub ${NICOVIDRTweeter.Arn}
           NISRA_TWEETER_LAMBDA: !Sub ${NICOVIDNISRATweeter.Arn}
           GENERIC_TWEETER_LAMBDA: !Sub ${NICOVIDGenericTweeter.Arn}
-          VARIANTS_TWEETER_LAMBDA: !Sub ${NICOVIDVariantsTweeter.Arn}
+          VARIANTS_TWEETER_LAMBDA: !Sub ${NICOVIDCOGVariantsTweeter.Arn}
   NICOVIDCasesTweeter:
     Type: AWS::Serverless::Function
     Properties:
@@ -99,17 +99,22 @@ Resources:
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
         MaximumRetryAttempts: 0
-  NICOVIDVariantsTweeter:
+  NICOVIDCOGVariantsTweeter:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: variant-tweeter/
-      Handler: app.lambda_handler
-      Runtime: python3.8
+      PackageType: Image
       Timeout: 600
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       MemorySize: 2048
+      ImageConfig:
+        Command:
+          - "variant_tweeter.lambda_handler"
       EventInvokeConfig:
         MaximumRetryAttempts: 0
+    Metadata:
+      DockerTag: tweeter-tag
+      DockerContext: ./
+      Dockerfile: tweeter/Dockerfile
   NICOVIDVariants:
     Type: AWS::Serverless::Function
     Properties:
