@@ -6,6 +6,7 @@ This repository holds the source code for [an unofficial Twitter bot](https://tw
 * daily updates on tests and cases
 * weekly updates on R number estimates
 * weekly updates on NISRA deaths statistics
+* ad-hoc updates of COG-UK variant counts
 * occasional interesting charts
 
 ## Vaccinations
@@ -37,15 +38,20 @@ The DoH publishes [R number estimates](https://www.health-ni.gov.uk/R-Number) on
 
 NISRA publishes [weekly deaths statistics](https://www.nisra.gov.uk/publications/weekly-death-statistics-northern-ireland-2021) when the number of deaths registered in a week is five or more.
 
+## Variants
+
+Variant data is pulled from [Microreact](https://beta.microreact.org/) as new files are published to its AWS S3 website.
+
 ## Architecture
 
 The bot is built using AWS infrastructure. The architecture is:
 
 * one 'scraper' for all data sources, running as a Python lambda function scheduled via EventBridge
-* four 'tweeters' for the four types of post, running as Python lambda functions triggered by the scraper when the data changes
+* five 'tweeters' for the five types of post, running as Python lambda functions triggered by the scraper when the data changes
+    * the more complicated (with charts or PDF extraction) of these use Dockerfiles, others use S3/lambda zip files
 * an S3 bucket to hold the scraped data
 * an S3 bucket to hold the lambda function code
-* an ECR repository to hold the image for the R number tweeter, which requires PDF extraction
+* an ECR repository to hold the images for the more complex tweeters
 * a Secrets Manager secret which holds API keys and other parameters
 
 ### User setup
