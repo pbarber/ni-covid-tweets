@@ -460,7 +460,6 @@ def lambda_handler(event, context):
             messages.append(check_cog(secret, s3, event.get('cog-notweet', False)))
         except:
             logging.exception('Caught exception accessing COG variants data')
-            print('Where is my exception?')
 
     return {
         "statusCode": 200,
