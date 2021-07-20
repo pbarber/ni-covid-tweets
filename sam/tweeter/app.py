@@ -58,10 +58,9 @@ def create_model(df, to_model, datekey):
     df['%s model_weekly_change' %to_model] = (fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 8) - fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)) / fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)
     return(df)
 
-# %%
-def plot_points_average_and_trend(df, colour, date):
-    df1 = df[(~df['INDIVIDUALS TESTED POSITIVE'].isna()) & (df['INDIVIDUALS TESTED POSITIVE'] != 0)]
-    df2 = df[(~df['New cases 7-day rolling mean'].isna()) & (df['New cases 7-day rolling mean'] != 0)]
+def plot_points_average_and_trend(df, colour, date, points, line, date_col, x_title, y_title, category):
+    df1 = df[(~df[points].isna()) & (df[points] != 0)]
+    df2 = df[(~df[line].isna()) & (df[line] != 0)]
     return altair.concat(altair.layer(
         altair.Chart(
             df1
@@ -72,15 +71,15 @@ def plot_points_average_and_trend(df, colour, date):
             size=15,
         ).encode(
             x=altair.X(
-                field='Sample_Date',
+                field=date_col,
                 type='temporal',
-                axis=altair.Axis(title='Specimen Date'),
+                axis=altair.Axis(title=x_title),
             ),
             y=altair.Y(
-                field='INDIVIDUALS TESTED POSITIVE',
+                field=points,
                 type='quantitative',
                 aggregate='sum',
-                axis=altair.Axis(title='Individuals tested positive'),
+                axis=altair.Axis(title=y_title),
                 scale=altair.Scale(
                     type='log'
                 ),
@@ -92,11 +91,11 @@ def plot_points_average_and_trend(df, colour, date):
             color=colour
         ).encode(
             x=altair.X(
-                field='Sample_Date',
+                field=date_col,
                 type='temporal'
             ),
             y=altair.Y(
-                field='New cases 7-day rolling mean',
+                field=line,
                 type='quantitative',
                 aggregate='sum',
                 scale=altair.Scale(
@@ -107,7 +106,7 @@ def plot_points_average_and_trend(df, colour, date):
         ),
     ).properties(
         title=altair.TitleParams(
-            ['Dots show daily case reports, line is 7-day rolling average',
+            ['Dots show daily reports, line is 7-day rolling average',
             'https://twitter.com/ni_covid19_data'],
             baseline='bottom',
             orient='bottom',
@@ -120,7 +119,7 @@ def plot_points_average_and_trend(df, colour, date):
         width=800
     )).properties(
         title=altair.TitleParams(
-            'NI COVID-19 cases (daily and 7-day mean) reported on %s' %date,
+            'NI COVID-19 %s (daily and 7-day mean) reported on %s' %(category, date),
             anchor='middle',
         )
     )
@@ -163,6 +162,28 @@ def lambda_handler(event, context):
         latest_model = df.iloc[df[df['Rolling cases per 100k model_daily_change'].notna()]['Sample_Date'].idxmax()]
         last_but1_model = df.iloc[df[(df['Rolling cases per 100k model_daily_change'].notna()) & (df['Sample_Date'] != latest_model['Sample_Date'])]['Sample_Date'].idxmax()]
 
+        # Summary stats to allow 'X registered in last 24 hours' info
+        deaths = pandas.read_excel(stream,engine='openpyxl',sheet_name='Deaths')
+        admissions = pandas.read_excel(stream,engine='openpyxl',sheet_name='Admissions')
+        discharges = pandas.read_excel(stream,engine='openpyxl',sheet_name='Discharges')
+        totals = {
+            'ind_tested': int(df['ALL INDIVIDUALS TESTED'].sum()),
+            'ind_positive': int(df['INDIVIDUALS TESTED POSITIVE'].sum()),
+            'deaths': int(deaths['Number of Deaths'].sum()),
+            'admissions': int(admissions['Number of Admissions'].sum()),
+            'discharges': int(discharges['Number of Discharges'].sum())
+        }
+        print(totals)
+        admissions = admissions.groupby('Admission Date')['Number of Admissions'].sum().reset_index()
+        admissions.set_index('Admission Date', inplace=True)
+        newind = pandas.date_range(start=admissions.index.min(), end=admissions.index.max())
+        admissions = admissions.reindex(newind)
+        admissions.index.name = 'Admission Date'
+        admissions.reset_index(inplace=True)
+        admissions.fillna(0, inplace=True)
+        admissions['Number of Admissions 7-day rolling mean'] = admissions['Number of Admissions'].rolling(7, center=True).mean()
+        print(admissions)
+
         # Plot the case reports and 7-day average
         options = webdriver.ChromeOptions()
         options.headless = True
@@ -181,8 +202,7 @@ def lambda_handler(event, context):
         options.add_argument("--homedir=/tmp/homedir/")
         options.add_argument("--disk-cache-dir=/tmp/disk-cache/")
         options.add_argument("--disable-async-dns")
-        plotname = None
-        plotstore = io.BytesIO()
+        plots = []
         try:
             driver = webdriver.Chrome(service_log_path='/tmp/chromedriver.log', options=options)
         except:
@@ -191,33 +211,55 @@ def lambda_handler(event, context):
                 logging.warning(log.read())
             logging.error([f for f in os.listdir('/tmp/')])
         else:
-            p = plot_points_average_and_trend(df[(df['Sample_Date'] > (latest['Sample_Date'] - pandas.to_timedelta(42, unit='d')))],'#076543',latest['Sample_Date'].strftime('%A %-d %B %Y'))
+            p = plot_points_average_and_trend(
+                df[(df['Sample_Date'] > (latest['Sample_Date'] - pandas.to_timedelta(42, unit='d')))],
+                '#076543',
+                latest['Sample_Date'].strftime('%A %-d %B %Y'),
+                'INDIVIDUALS TESTED POSITIVE',
+                'New cases 7-day rolling mean',
+                'Sample_Date',
+                'Specimen Date',
+                'Individuals tested positive',
+                'cases'
+            )
             try:
-                p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+                plot = {'name': None, 'store': io.BytesIO()}
+                p.save(fp=plot['store'], format='png', method='selenium', webdriver=driver)
+                plots.append(plot)
             except:
                 logging.exception('Failed to output plot')
                 with open('/tmp/chromedriver.log') as log:
                     logging.warning(log.read())
                 logging.error([f for f in os.listdir('/tmp/')])
             else:
-                plotstore.seek(0)
-                plotname = 'ni-cases-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
+                plots[-1]['store'].seek(0)
+                plots[-1]['name'] = 'ni-cases-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
+                p = plot_points_average_and_trend(
+                    admissions[(admissions['Admission Date'] > (latest['Sample_Date'] - pandas.to_timedelta(42, unit='d')))],
+                    '#076543',
+                    latest['Sample_Date'].strftime('%A %-d %B %Y'),
+                    'Number of Admissions',
+                    'Number of Admissions 7-day rolling mean',
+                    'Admission Date',
+                    'Date',
+                    'Hospital Admissions',
+                    'admissions'
+                )
+                try:
+                    plot = {'name': None, 'store': io.BytesIO()}
+                    p.save(fp=plot['store'], format='png', method='selenium', webdriver=driver)
+                    plots.append(plot)
+                except:
+                    logging.exception('Failed to output plot')
+                    with open('/tmp/chromedriver.log') as log:
+                        logging.warning(log.read())
+                    logging.error([f for f in os.listdir('/tmp/')])
+                else:
+                    plots[-1]['store'].seek(0)
+                    plots[-1]['name'] = 'ni-admissions-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
 
         # Find the date since which the rate was as high/low
         symb_7d, est = find_previous(df, latest_7d, 'ROLLING 7 DAY POSITIVE TESTS')
-
-        # Summary stats to allow 'X registered in last 24 hours' info
-        deaths = pandas.read_excel(stream,engine='openpyxl',sheet_name='Deaths')
-        admissions = pandas.read_excel(stream,engine='openpyxl',sheet_name='Admissions')
-        discharges = pandas.read_excel(stream,engine='openpyxl',sheet_name='Discharges')
-        totals = {
-            'ind_tested': int(df['ALL INDIVIDUALS TESTED'].sum()),
-            'ind_positive': int(df['INDIVIDUALS TESTED POSITIVE'].sum()),
-            'deaths': int(deaths['Number of Deaths'].sum()),
-            'admissions': int(admissions['Number of Admissions'].sum()),
-            'discharges': int(discharges['Number of Discharges'].sum())
-        }
-        print(totals)
 
         # Build the tweet text
         tweet = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive on {date}
@@ -284,8 +326,7 @@ def lambda_handler(event, context):
             'tweet': change.get('tweet', True),
             'totals': totals,
             'filedate': change['filedate'],
-            'plotname': plotname,
-            'plot': plotstore
+            'plots': plots
         })
 
     donottweet = []
@@ -306,23 +347,32 @@ def lambda_handler(event, context):
                     secret['twitter_accesstoken'],
                     secret['twitter_accesstokensecret']
                 )
-                if t['plotname'] is not None:
-                    resp = api.upload(t['plot'], t['plotname'])
+                if len(t['plots']) > 0:
+                    resp = api.upload(t['plots'][0]['store'], t['plots'][0]['name'])
+                if len(t['plots']) > 1:
+                    resp2 = api.upload(t['plots'][1]['store'], t['plots'][1]['name'])
                 if t['tweet'] is True:
-                    if t['plotname'] is not None:
+                    if len(t['plots']) > 0:
                         resp = api.tweet(t['text'] + t['url'], media_ids=[resp.media_id])
                     else:
                         resp = api.tweet(t['text'] + t['url'])
                     messages.append('Tweeted ID %s, ' %resp.id)
                     if t['text2'] is not None:
-                        resp = api.tweet(t['text2'], resp.id)
+                        if len(t['plots']) > 1:
+                            resp = api.tweet(t['text2'], resp.id, media_ids=[resp2.media_id])
+                        else:
+                            resp = api.tweet(t['text2'], resp.id)
                         messages[-1] += ('ID %s, ' %resp.id)
                 else:
-                    if t['plotname'] is not None:
+                    if len(t['plots']) > 0:
                         resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'], resp.media_id)
                     else:
                         resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'])
                     messages.append('Tweeted DM %s, ' %resp.id)
+                    if len(t['plots']) > 1:
+                        resp = api.dm(secret['twitter_dmaccount'], t['text2'], resp2.media_id)
+                    else:
+                        resp = api.dm(secret['twitter_dmaccount'], t['text2'])
             else:
                 messages.append('Duplicate found %s, did not tweet, ' %t['filedate'])
 
