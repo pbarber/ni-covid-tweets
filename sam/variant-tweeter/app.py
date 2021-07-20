@@ -163,7 +163,7 @@ def lambda_handler(event, context):
                     lin_pc_by_week[lin_pc_by_week['Week of sample']>lin_pc_by_week['Week of sample'].max()-pandas.to_timedelta(84, unit='d')]
                 ).mark_area().encode(
                     x = 'Week of sample:T',
-                    y = altair.Y('sum(count):Q', axis=altair.Axis(format='%', title='% of samples')),
+                    y = altair.Y('sum(count):Q', axis=altair.Axis(format='%', title='% of samples', orient="right")),
                     color='WHO label'
                 ).properties(
                     height=225,
