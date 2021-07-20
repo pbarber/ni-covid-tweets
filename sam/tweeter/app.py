@@ -182,7 +182,8 @@ def lambda_handler(event, context):
         admissions.reset_index(inplace=True)
         admissions.fillna(0, inplace=True)
         admissions['Number of Admissions 7-day rolling mean'] = admissions['Number of Admissions'].rolling(7, center=True).mean()
-        print(admissions)
+        admissions = create_model(admissions,'Number of Admissions 7-day rolling mean','Admission Date')
+        latest_adm_model = admissions.iloc[admissions[admissions['Number of Admissions 7-day rolling mean model_daily_change'].notna()]['Admission Date'].idxmax()]
 
         # Plot the case reports and 7-day average
         options = webdriver.ChromeOptions()
@@ -296,13 +297,14 @@ def lambda_handler(event, context):
                 yesterday = report
             if (yesterday is not None) and (lastweek is not None):
                 break
-        tweet2 = None
+        tweet2 = '''{inpatients} inpatient{ips} reported'''.format(
+                inpatients=totals['admissions'] - totals['discharges'],
+                ips='s' if ((totals['admissions'] - totals['discharges']) != 1) else ''
+        )
         if lastweek is not None:
             ip_change = (totals['admissions'] - totals['discharges']) - (lastweek['totals']['admissions'] - lastweek['totals']['discharges'])
-            tweet2 = '''{inpatients} inpatient{ips} reported:
+            tweet2 += ''':
 {ip_bullet} {ip_change} {ip_text} than 7 days ago ({admissions} admitted, {discharges} discharged)'''.format(
-                inpatients=totals['admissions'] - totals['discharges'],
-                ips='s' if (totals['admissions'] - totals['discharges']) else '',
                 ip_change=abs(ip_change),
                 ip_bullet=good_symb if ip_change < 0 else bad_symb,
                 ip_text='fewer' if ip_change < 0 else 'more',
@@ -317,6 +319,17 @@ def lambda_handler(event, context):
                     ds='s' if ((totals['deaths'] - yesterday['totals']['deaths']) != 1) else '',
                     deaths_7d=totals['deaths'] - lastweek['totals']['deaths']
                 )
+
+        tweet2 += '''
+
+{tag_model} admissions {dir_model} by {model_daily:.1%} per day, {model_weekly:.1%} per week, {doub} time {doub_time:.1f} days'''.format(
+            model_daily=latest_adm_model['Number of Admissions 7-day rolling mean model_daily_change'],
+            model_weekly=latest_adm_model['Number of Admissions 7-day rolling mean model_weekly_change'],
+            dir_model='falling' if latest_adm_model['Number of Admissions 7-day rolling mean model_daily_change']<0 else 'rising',
+            tag_model=good_symb if latest_adm_model['Number of Admissions 7-day rolling mean model_daily_change']<0 else bad_symb,
+            doub='halving' if (latest_adm_model['Number of Admissions 7-day rolling mean model0'] < 0) else 'doubling',
+            doub_time=abs(numpy.log(2)/latest_adm_model['Number of Admissions 7-day rolling mean model0'])
+        )
 
         tweets.append({
             'text': tweet,
