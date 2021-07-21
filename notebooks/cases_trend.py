@@ -31,6 +31,148 @@ def create_models(df, areakey, to_model):
     df['%s model_weekly_change' %to_model] = (fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 8) - fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)) / fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)
     return(df)
 
+def fit_exp(curve0, curve1, value):
+    return (numpy.exp(curve1) * numpy.exp(curve0 * value))
+
+def plot_single_trendline_fit(df, y, y_title, group, groupval, colour, totdays, fitdays, ignoredays=0):
+    nofit_dates = df[(~df[y].isna()) & (df[group]==groupval)]['Date'].drop_duplicates().nlargest(totdays+ignoredays).nsmallest(totdays-fitdays)
+    fit_dates = df[(~df[y].isna()) & (df[group]==groupval)]['Date'].drop_duplicates().nlargest(fitdays+ignoredays).nsmallest(fitdays)
+    ignore_dates= df[(~df[y].isna()) & (df[group]==groupval)]['Date'].drop_duplicates().nlargest(ignoredays)
+    nofit = altair.Chart(
+        df[((df['Date'].isin(nofit_dates)) | df['Date'].isin(ignore_dates)) & (~df[y].isna()) & (df[group]==groupval)]
+    ).mark_point(
+        color=colour,
+        opacity=0.7
+    ).encode(
+        x=altair.X(
+            field='Date',
+            type='temporal'
+        ),
+        y=altair.Y(
+            field=y,
+            type='quantitative',
+            aggregate='sum',
+            scale=altair.Scale(
+                type='log'
+            ),
+        )
+    )
+
+    tofit = df[(df['Date'].isin(fit_dates)) & (~df[y].isna()) & (df[group]==groupval)]
+    fit = altair.Chart(
+        tofit
+    ).mark_point(
+        color=colour,
+        opacity=0.7
+    ).encode(
+        x=altair.X(
+            field='Date',
+            type='temporal'
+        ),
+        y=altair.Y(
+            field=y,
+            type='quantitative',
+            aggregate='sum',
+            scale=altair.Scale(
+                type='log'
+            ),
+            title=y_title
+        )
+    )
+
+    tofit['x'] = (tofit['Date'] - df['Date'].min()).dt.days
+    curve = numpy.polyfit(tofit['x'], numpy.log(tofit[y]), 1)
+    tofit['result'] = fit_exp(curve[0], curve[1], tofit['x'])
+    pct_change = (fit_exp(curve[0], curve[1], 2) - fit_exp(curve[0], curve[1], 1)) / fit_exp(curve[0], curve[1], 1)
+    pct_change_wk = (fit_exp(curve[0], curve[1], 8) - fit_exp(curve[0], curve[1], 1)) / fit_exp(curve[0], curve[1], 1)
+    model = pandas.DataFrame({
+        'Date': tofit['Date'].mean().strftime('%A %-d %B %Y'),
+        'Daily': abs(pct_change),
+        'Weekly': abs(pct_change_wk),
+        'RF': 'fall' if (pct_change < 0) else 'rise',
+        'HD': 'Halving' if (curve[0] < 0) else 'Doubling',
+        "HD_time": abs(numpy.log(2)/curve[0])
+    }, index=[0])
+
+    lobf = altair.Chart(
+        tofit
+    ).mark_line(
+        color=colour,
+        opacity=0.7
+    ).encode(
+        x=altair.X(
+            field='Date',
+            type='temporal',
+            axis=altair.Axis(
+                title='Specimen Date',
+                format = ("%-d %b")
+            )
+        ),
+        y=altair.Y(
+            field='result',
+            type='quantitative',
+            aggregate='sum',
+            scale=altair.Scale(
+                type='log'
+            ),
+            title=y_title
+        )
+    )
+
+    labels = altair.Chart(
+        model
+    ).transform_calculate(
+        pct=f'"Daily " + datum.RF + ": " + format(datum.Daily,".1%")',
+        pct_wk=f'"Weekly " + datum.RF + ": " + format(datum.Weekly,".1%")',
+        hd=f'datum.HD + " time: " + format(datum.HD_time,".1f") + " days"',
+        date=f'"Trendline mid-point: " + datum.Date'
+    )
+
+    return altair.concat(
+        altair.layer(
+            nofit,
+            fit,
+            lobf,
+            labels.mark_text(align='left').encode(
+                x=altair.value(20),
+                y=altair.value(20),
+                text='pct:O'
+            ),
+            labels.mark_text(align='left').encode(
+                x=altair.value(20),
+                y=altair.value(37),
+                text='pct_wk:O'
+            ),
+            labels.mark_text(align='left').encode(
+                x=altair.value(20),
+                y=altair.value(54),
+                text='hd:O'
+            ),
+            labels.mark_text(align='left').encode(
+                x=altair.value(20),
+                y=altair.value(71),
+                text='date:O'
+            ),
+        ).properties(
+            title=altair.TitleParams(
+                'COVID-19 cases in %s' %groupval,
+            ),
+            height=384,
+            width=512,
+        )
+    ).properties(
+        title=altair.TitleParams(
+            'https://twitter.com/ni_covid19_data',
+            baseline='bottom',
+            orient='bottom',
+            anchor='end',
+            fontWeight='normal',
+            fontSize=10,
+            dy=10
+        ),
+    )
+
+
 # %% 2019 populations from Fig 3 of https://www.ons.gov.uk/peoplepopulationandcommunity/populationandmigration/populationestimates/bulletins/annualmidyearpopulationestimates/mid2019estimates
 nationpop = pandas.DataFrame([
     {'Nation': 'Northern Ireland', 'Population': 1893667},
@@ -71,7 +213,7 @@ df = create_models(df, 'Nation', 'Rolling cases per 100k')
 df = create_models(df, 'Nation', 'newCasesBySpecimenDate')
 
 # %% Load NI regional data
-ni = pandas.read_excel('~/Downloads/doh-dd-110521.xlsx', sheet_name='Tests')
+ni = pandas.read_excel('~/Downloads/doh-dd-210721.xlsx', sheet_name='Tests')
 ni.rename(columns={'LGD2014NAME': 'Area', 'Date of Specimen': 'Date'}, inplace=True)
 ni['Area'] = ni['Area'].fillna('Missing Postcode')
 newind = pandas.date_range(start=ni['Date'].min(), end=ni['Date'].max())
@@ -270,148 +412,6 @@ altair.vconcat(
     x='shared'
 )
 
-# %% Functions to plot the last n days with trend line from last m days
-def fit_exp(curve0, curve1, value):
-    return (numpy.exp(curve1) * numpy.exp(curve0 * value))
-
-def plot_single_trendline_fit(df, y, y_title, group, groupval, colour, totdays, fitdays, ignoredays=0):
-    nofit_dates = df[(~df[y].isna()) & (df[group]==groupval)]['Date'].drop_duplicates().nlargest(totdays+ignoredays).nsmallest(totdays-fitdays)
-    fit_dates = df[(~df[y].isna()) & (df[group]==groupval)]['Date'].drop_duplicates().nlargest(fitdays+ignoredays).nsmallest(fitdays)
-    ignore_dates= df[(~df[y].isna()) & (df[group]==groupval)]['Date'].drop_duplicates().nlargest(ignoredays)
-    nofit = altair.Chart(
-        df[((df['Date'].isin(nofit_dates)) | df['Date'].isin(ignore_dates)) & (~df[y].isna()) & (df[group]==groupval)]
-    ).mark_point(
-        color=colour,
-        opacity=0.7
-    ).encode(
-        x=altair.X(
-            field='Date',
-            type='temporal'
-        ),
-        y=altair.Y(
-            field=y,
-            type='quantitative',
-            aggregate='sum',
-            scale=altair.Scale(
-                type='log'
-            ),
-        )
-    )
-
-    tofit = df[(df['Date'].isin(fit_dates)) & (~df[y].isna()) & (df[group]==groupval)]
-    fit = altair.Chart(
-        tofit
-    ).mark_point(
-        color=colour,
-        opacity=0.7
-    ).encode(
-        x=altair.X(
-            field='Date',
-            type='temporal'
-        ),
-        y=altair.Y(
-            field=y,
-            type='quantitative',
-            aggregate='sum',
-            scale=altair.Scale(
-                type='log'
-            ),
-            title=y_title
-        )
-    )
-
-    tofit['x'] = (tofit['Date'] - df['Date'].min()).dt.days
-    curve = numpy.polyfit(tofit['x'], numpy.log(tofit[y]), 1)
-    tofit['result'] = fit_exp(curve[0], curve[1], tofit['x'])
-    pct_change = (fit_exp(curve[0], curve[1], 2) - fit_exp(curve[0], curve[1], 1)) / fit_exp(curve[0], curve[1], 1)
-    pct_change_wk = (fit_exp(curve[0], curve[1], 8) - fit_exp(curve[0], curve[1], 1)) / fit_exp(curve[0], curve[1], 1)
-    model = pandas.DataFrame({
-        'Date': tofit['Date'].mean().strftime('%A %-d %B %Y'),
-        'Daily': abs(pct_change),
-        'Weekly': abs(pct_change_wk),
-        'RF': 'fall' if (pct_change < 0) else 'rise',
-        'HD': 'Halving' if (curve[0] < 0) else 'Doubling',
-        "HD_time": abs(numpy.log(2)/curve[0])
-    }, index=[0])
-
-    lobf = altair.Chart(
-        tofit
-    ).mark_line(
-        color=colour,
-        opacity=0.7
-    ).encode(
-        x=altair.X(
-            field='Date',
-            type='temporal',
-            axis=altair.Axis(
-                title='Specimen Date',
-                format = ("%-d %b")
-            )
-        ),
-        y=altair.Y(
-            field='result',
-            type='quantitative',
-            aggregate='sum',
-            scale=altair.Scale(
-                type='log'
-            ),
-            title=y_title
-        )
-    )
-
-    labels = altair.Chart(
-        model
-    ).transform_calculate(
-        pct=f'"Daily " + datum.RF + ": " + format(datum.Daily,".1%")',
-        pct_wk=f'"Weekly " + datum.RF + ": " + format(datum.Weekly,".1%")',
-        hd=f'datum.HD + " time: " + format(datum.HD_time,".1f") + " days"',
-        date=f'"Trendline mid-point: " + datum.Date'
-    )
-
-    return altair.concat(
-        altair.layer(
-            nofit,
-            fit,
-            lobf,
-            labels.mark_text(align='left').encode(
-                x=altair.value(20),
-                y=altair.value(20),
-                text='pct:O'
-            ),
-            labels.mark_text(align='left').encode(
-                x=altair.value(20),
-                y=altair.value(37),
-                text='pct_wk:O'
-            ),
-            labels.mark_text(align='left').encode(
-                x=altair.value(20),
-                y=altair.value(54),
-                text='hd:O'
-            ),
-            labels.mark_text(align='left').encode(
-                x=altair.value(20),
-                y=altair.value(71),
-                text='date:O'
-            ),
-        ).properties(
-            title=altair.TitleParams(
-                'COVID-19 cases in %s' %groupval,
-            ),
-            height=384,
-            width=512,
-        )
-    ).properties(
-        title=altair.TitleParams(
-            'https://twitter.com/ni_covid19_data',
-            baseline='bottom',
-            orient='bottom',
-            anchor='end',
-            fontWeight='normal',
-            fontSize=10,
-            dy=10
-        ),
-    )
-
 # %%
 plt = plot_single_trendline_fit(df, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Nation', 'Northern Ireland', '#076543', 42, 9, 1)
 plt.save('nir-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
@@ -545,10 +545,10 @@ plt.save('nations-daily-change-%s.png'%datetime.datetime.now().date().strftime('
 plt
 
 # %%
-def plot_points_average_and_trend(df, colour):
-    df1 = df[(~df['newCasesBySpecimenDate'].isna()) & (df['newCasesBySpecimenDate'] != 0)]
-    df2 = df[(~df['New cases 7-day rolling mean'].isna()) & (df['New cases 7-day rolling mean'] != 0)]
-    return altair.layer(
+def plot_points_average_and_trend(df, colour, date, points, line, date_col, x_title, y_title, category, area):
+    df1 = df[(~df[points].isna()) & (df[points] != 0)]
+    df2 = df[(~df[line].isna()) & (df[line] != 0)]
+    return altair.concat(altair.layer(
         altair.Chart(
             df1
         ).mark_point(
@@ -558,13 +558,15 @@ def plot_points_average_and_trend(df, colour):
             size=15,
         ).encode(
             x=altair.X(
-                field='Date',
-                type='temporal'
+                field=date_col,
+                type='temporal',
+                axis=altair.Axis(title=x_title),
             ),
             y=altair.Y(
-                field='newCasesBySpecimenDate',
+                field=points,
                 type='quantitative',
                 aggregate='sum',
+                axis=altair.Axis(title=y_title),
                 scale=altair.Scale(
                     type='log'
                 ),
@@ -576,21 +578,23 @@ def plot_points_average_and_trend(df, colour):
             color=colour
         ).encode(
             x=altair.X(
-                field='Date',
+                field=date_col,
                 type='temporal'
             ),
             y=altair.Y(
-                field='New cases 7-day rolling mean',
+                field=line,
                 type='quantitative',
                 aggregate='sum',
                 scale=altair.Scale(
                     type='log'
                 ),
+                axis=altair.Axis(title=''),
             )
         ),
     ).properties(
         title=altair.TitleParams(
-            'https://twitter.com/ni_covid19_data',
+            ['Dots show daily reports, line is 7-day rolling average',
+            'https://twitter.com/ni_covid19_data'],
             baseline='bottom',
             orient='bottom',
             anchor='end',
@@ -598,8 +602,39 @@ def plot_points_average_and_trend(df, colour):
             fontSize=10,
             dy=10
         ),
+        height=450,
+        width=800
+    )).properties(
+        title=altair.TitleParams(
+            '%s COVID-19 %s (daily and 7-day mean) reported on %s' %(area, category, date),
+            anchor='middle',
+        )
     )
-plot_points_average_and_trend(df[(df['Nation']=='England') & (df['Date'] > '2021-04-23')],'grey').properties(
-    height=450,
-    width=800
+
+# %%
+plot_points_average_and_trend(
+    df[(df['Nation']=='England') & (df['Date'] > '2021-04-23')],
+    'grey',
+    datetime.datetime.today().strftime('%A %-d %B %Y'),
+    'newCasesBySpecimenDate',
+    'New cases 7-day rolling mean',
+    'Date',
+    'Specimen Date',
+    'New cases',
+    'cases',
+    'England'
+)
+
+# %%
+plot_points_average_and_trend(
+    df[(df['Nation']=='Northern Ireland') & (df['Date'] > '2020-08-01')],
+    '#076543',
+    datetime.datetime.today().strftime('%A %-d %B %Y'),
+    'newCasesBySpecimenDate',
+    'New cases 7-day rolling mean',
+    'Date',
+    'Specimen Date',
+    'New cases',
+    'cases',
+    'NI'
 )
