@@ -209,6 +209,7 @@ df = df.rename(columns={'index': 'Date'}).sort_values('Date')
 df['New cases 7-day rolling mean'] = df.groupby('Nation').rolling(7, center=True).mean().droplevel(0)
 df = df.merge(nationpop, how='left', left_on='Nation', right_on='Nation', validate='m:1')
 df['Rolling cases per 100k'] = 100000 * (df['New cases 7-day rolling mean'] / df['Population'])
+df['New cases per 100k'] = 100000 * (df['newCasesBySpecimenDate'] / df['Population'])
 df = create_models(df, 'Nation', 'Rolling cases per 100k')
 df = create_models(df, 'Nation', 'newCasesBySpecimenDate')
 
@@ -224,6 +225,17 @@ ni['New cases 7-day rolling mean'] = ni.groupby('Area')['Individ with Positive L
 ni = ni.merge(nipop, how='left', left_on='Area', right_on='Area', validate='m:1')
 ni['Rolling cases per 100k'] = 100000 * (ni['New cases 7-day rolling mean'] / ni['Population'])
 ni = create_models(ni, 'Area', 'Rolling cases per 100k')
+
+# %% Load NI admissions data
+admissions = pandas.read_excel('~/Downloads/doh-dd-210721.xlsx',engine='openpyxl',sheet_name='Admissions')
+admissions = admissions.groupby('Admission Date')['Number of Admissions'].sum().reset_index()
+admissions.set_index('Admission Date', inplace=True)
+newind = pandas.date_range(start=admissions.index.min(), end=admissions.index.max())
+admissions = admissions.reindex(newind)
+admissions.index.name = 'Admission Date'
+admissions.reset_index(inplace=True)
+admissions.fillna(0, inplace=True)
+admissions['Number of Admissions 7-day rolling mean'] = admissions['Number of Admissions'].rolling(7, center=True).mean()
 
 # %%
 covid_timeline = pandas.DataFrame([
@@ -545,52 +557,123 @@ plt.save('nations-daily-change-%s.png'%datetime.datetime.now().date().strftime('
 plt
 
 # %%
-def plot_points_average_and_trend(df, colour, date, points, line, date_col, x_title, y_title, category, area):
-    df1 = df[(~df[points].isna()) & (df[points] != 0)]
-    df2 = df[(~df[line].isna()) & (df[line] != 0)]
-    return altair.concat(altair.layer(
-        altair.Chart(
-            df1
-        ).mark_point(
-            color=colour,
-            opacity=0.7,
-            filled=True,
-            size=15,
-        ).encode(
-            x=altair.X(
+def points_average_and_trend(points, line, colour, date_col, x_title, y_title, scale='linear', width=800, height=450):
+    if scale=='log':
+        y_title += ' (log scale)'
+    line_df = line[(~line.isna()) & (line != 0)].reset_index(name='line')
+    if colour in line_df.columns:
+        encode_point_args = {
+            'x': altair.X(
                 field=date_col,
                 type='temporal',
                 axis=altair.Axis(title=x_title),
             ),
-            y=altair.Y(
-                field=points,
+            'y': altair.Y(
+                field='points',
                 type='quantitative',
                 aggregate='sum',
-                axis=altair.Axis(title=y_title),
+                axis=altair.Axis(title=''),
                 scale=altair.Scale(
-                    type='log'
+                    type=scale
                 ),
-            )
-        ),
-        altair.Chart(
-            df2
-        ).mark_line(
-            color=colour
-        ).encode(
-            x=altair.X(
+            ),
+            'color': colour,
+        }
+        encode_line_args = {
+            'x': altair.X(
                 field=date_col,
                 type='temporal'
             ),
-            y=altair.Y(
-                field=line,
+            'y': altair.Y(
+                field='line',
                 type='quantitative',
                 aggregate='sum',
                 scale=altair.Scale(
-                    type='log'
+                    type=scale
                 ),
+                axis=altair.Axis(title=y_title),
+            ),
+            'color': colour,
+        }
+        mark_point_args = {
+            'opacity':0.7,
+            'filled':True,
+            'size':15,
+        }
+        mark_line_args = {
+        }
+    else:
+        encode_point_args = {
+            'x': altair.X(
+                field=date_col,
+                type='temporal',
+                axis=altair.Axis(title=x_title),
+            ),
+            'y': altair.Y(
+                field='points',
+                type='quantitative',
+                aggregate='sum',
                 axis=altair.Axis(title=''),
-            )
+                scale=altair.Scale(
+                    type=scale
+                ),
+            ),
+        }
+        encode_line_args = {
+            'x': altair.X(
+                field=date_col,
+                type='temporal'
+            ),
+            'y': altair.Y(
+                field='line',
+                type='quantitative',
+                aggregate='sum',
+                scale=altair.Scale(
+                    type=scale
+                ),
+                axis=altair.Axis(title=y_title),
+            ),
+        }
+        mark_point_args = {
+            'color':colour,
+            'opacity':0.7,
+            'filled':True,
+            'size':15,
+        }
+        mark_line_args = {
+            'color':colour,
+        }
+    charts = [
+        altair.Chart(
+            line_df
+        ).mark_line(
+            **mark_line_args
+        ).encode(
+            **encode_line_args
+        ).properties(
+            width=width,
+            height=height
         ),
+    ]
+    if points is not None:
+        points_df = points[(~points.isna()) & (points != 0)].reset_index(name='points')
+        charts.append(
+            altair.Chart(
+                points_df
+            ).mark_point(
+                **mark_point_args
+            ).encode(
+                **encode_point_args
+            )
+        )
+    return altair.layer(*charts
+    )
+
+def plot_points_average_and_trend(configs, title):
+    return altair.concat(altair.vconcat(
+        *[points_average_and_trend(
+            **c
+        ) for c in configs]
     ).properties(
         title=altair.TitleParams(
             ['Dots show daily reports, line is 7-day rolling average',
@@ -602,39 +685,95 @@ def plot_points_average_and_trend(df, colour, date, points, line, date_col, x_ti
             fontSize=10,
             dy=10
         ),
-        height=450,
-        width=800
     )).properties(
         title=altair.TitleParams(
-            '%s COVID-19 %s (daily and 7-day mean) reported on %s' %(area, category, date),
+            title,
             anchor='middle',
         )
     )
 
 # %%
 plot_points_average_and_trend(
-    df[(df['Nation']=='England') & (df['Date'] > '2021-04-23')],
-    'grey',
-    datetime.datetime.today().strftime('%A %-d %B %Y'),
-    'newCasesBySpecimenDate',
-    'New cases 7-day rolling mean',
-    'Date',
-    'Specimen Date',
-    'New cases',
-    'cases',
-    'England'
+    [
+        {
+            'points': None,
+            'line': df[(df['Date'] > '2021-04-23')].set_index(['Date','Nation'])['Rolling cases per 100k'],
+            'colour': 'Nation',
+            'date_col': 'Date',
+            'x_title': 'Specimen Date',
+            'y_title': 'New cases per 100k',
+            'scale': 'log'
+        },
+    ],
+    '%s COVID-19 %s (7-day mean) reported on %s' %(
+        'UK',
+        'cases',
+        datetime.datetime.today().strftime('%A %-d %B %Y'),
+    )
 )
 
 # %%
 plot_points_average_and_trend(
-    df[(df['Nation']=='Northern Ireland') & (df['Date'] > '2020-08-01')],
-    '#076543',
-    datetime.datetime.today().strftime('%A %-d %B %Y'),
-    'newCasesBySpecimenDate',
-    'New cases 7-day rolling mean',
-    'Date',
-    'Specimen Date',
-    'New cases',
-    'cases',
-    'NI'
+    [
+        {
+            'points': df[(df['Nation']=='Northern Ireland') & (df['Date'] > '2021-06-01')].set_index('Date')['newCasesBySpecimenDate'],
+            'line': df[(df['Nation']=='Northern Ireland') & (df['Date'] > '2021-06-01')].set_index('Date')['New cases 7-day rolling mean'],
+            'colour': '#076543',
+            'date_col': 'Date',
+            'x_title': 'Specimen Date',
+            'y_title': 'New cases',
+            'scale': 'linear',
+            'height': 225
+        },
+        {
+            'points': admissions[(admissions['Admission Date'] > '2021-06-01')].set_index('Admission Date')['Number of Admissions'],
+            'line': admissions[(admissions['Admission Date'] > '2021-06-01')].set_index('Admission Date')['Number of Admissions 7-day rolling mean'],
+            'colour': '#076543',
+            'date_col': 'Admission Date',
+            'x_title': 'Date',
+            'y_title': 'Hospital admissions',
+            'scale': 'linear',
+            'height': 225
+        },
+    ],
+    '%s COVID-19 %s (daily and 7-day mean) reported on %s' %(
+        'Northern Ireland',
+        'cases and admissions',
+        datetime.datetime.today().strftime('%A %-d %B %Y'),
+    )
 )
+
+# %%
+start_date = '2020-12-01'
+end_date = '2021-01-15'
+plot_points_average_and_trend(
+    [
+        {
+            'points': df[(df['Nation']=='Northern Ireland') & (df['Date'] >= start_date) & (df['Date'] <= end_date)].set_index('Date')['newCasesBySpecimenDate'],
+            'line': df[(df['Nation']=='Northern Ireland') & (df['Date'] >= start_date) & (df['Date'] <= end_date)].set_index('Date')['New cases 7-day rolling mean'],
+            'colour': '#076543',
+            'date_col': 'Date',
+            'x_title': 'Specimen Date',
+            'y_title': 'New cases',
+            'scale': 'linear',
+            'height': 225
+        },
+        {
+            'points': admissions[(admissions['Admission Date'] >= start_date) & (admissions['Admission Date'] <= end_date)].set_index('Admission Date')['Number of Admissions'],
+            'line': admissions[(admissions['Admission Date'] >= start_date) & (admissions['Admission Date'] <= end_date)].set_index('Admission Date')['Number of Admissions 7-day rolling mean'],
+            'colour': '#076543',
+            'date_col': 'Admission Date',
+            'x_title': 'Date',
+            'y_title': 'Hospital admissions',
+            'scale': 'linear',
+            'height': 225
+        },
+    ],
+    '%s COVID-19 %s (daily and 7-day mean) reported on %s' %(
+        'Northern Ireland',
+        'cases and admissions',
+        datetime.datetime.strptime(end_date, '%Y-%m-%d').strftime('%A %-d %B %Y'),
+    )
+)
+
+# %%
