@@ -3,6 +3,7 @@ import pandas
 import altair
 import numpy
 import datetime
+from sklearn.linear_model import LinearRegression
 
 # %% Exponential fitting functions
 def calc_exp_fit0(data):
@@ -214,7 +215,7 @@ df = create_models(df, 'Nation', 'Rolling cases per 100k')
 df = create_models(df, 'Nation', 'newCasesBySpecimenDate')
 
 # %% Load NI regional data
-ni = pandas.read_excel('~/Downloads/doh-dd-210721.xlsx', sheet_name='Tests')
+ni = pandas.read_excel('~/Downloads/doh-dd-230721.xlsx', sheet_name='Tests')
 ni.rename(columns={'LGD2014NAME': 'Area', 'Date of Specimen': 'Date'}, inplace=True)
 ni['Area'] = ni['Area'].fillna('Missing Postcode')
 newind = pandas.date_range(start=ni['Date'].min(), end=ni['Date'].max())
@@ -227,7 +228,7 @@ ni['Rolling cases per 100k'] = 100000 * (ni['New cases 7-day rolling mean'] / ni
 ni = create_models(ni, 'Area', 'Rolling cases per 100k')
 
 # %% Load NI admissions data
-admissions = pandas.read_excel('~/Downloads/doh-dd-210721.xlsx',engine='openpyxl',sheet_name='Admissions')
+admissions = pandas.read_excel('~/Downloads/doh-dd-230721.xlsx',engine='openpyxl',sheet_name='Admissions')
 admissions = admissions.groupby('Admission Date')['Number of Admissions'].sum().reset_index()
 admissions.set_index('Admission Date', inplace=True)
 newind = pandas.date_range(start=admissions.index.min(), end=admissions.index.max())
@@ -236,6 +237,17 @@ admissions.index.name = 'Admission Date'
 admissions.reset_index(inplace=True)
 admissions.fillna(0, inplace=True)
 admissions['Number of Admissions 7-day rolling mean'] = admissions['Number of Admissions'].rolling(7, center=True).mean()
+
+# %% LOad NI deaths data
+deaths = pandas.read_excel('~/Downloads/doh-dd-230721.xlsx',engine='openpyxl',sheet_name='Deaths')
+deaths = deaths.groupby('Date of Death')['Number of Deaths'].sum().reset_index()
+deaths.set_index('Date of Death', inplace=True)
+newind = pandas.date_range(start=deaths.index.min(), end=deaths.index.max())
+deaths = deaths.reindex(newind)
+deaths.index.name = 'Date of Death'
+deaths.reset_index(inplace=True)
+deaths.fillna(0, inplace=True)
+deaths['Number of Deaths 7-day rolling mean'] = deaths['Number of Deaths'].rolling(7, center=True).mean()
 
 # %%
 covid_timeline = pandas.DataFrame([
@@ -372,19 +384,23 @@ plot_multiple_trendlines(
     y='New cases 7-day rolling mean',
     color='Nation',
     y_scale='log',
+    y_title='New cases',
     domain=['England','Scotland','Wales','Northern Ireland'],
     range=['grey','#005eb8','#D30731','#076543']
 )
 
 # %% Plot the change in cases per 100k since Christmas for all UK nations
-plot_multiple_trendlines(
-    df[df['Date']>'2020-12-24'],
+plt = plot_multiple_trendlines(
+    df[(df['Date']>'2020-12-24') & (df['Date']<'2021-07-19')],
     y='Rolling cases per 100k',
     color='Nation',
-    y_scale='log',
+    y_scale='linear',
+    y_title='New cases per 100k (rolling average, log scale)',
     domain=['England','Scotland','Wales','Northern Ireland'],
     range=['grey','#005eb8','#D30731','#076543']
 )
+plt.save('uk-linear-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+plt
 
 # %% Plot just NI cases since Christmas
 altair.vconcat(
@@ -557,7 +573,7 @@ plt.save('nations-daily-change-%s.png'%datetime.datetime.now().date().strftime('
 plt
 
 # %%
-def points_average_and_trend(points, line, colour, date_col, x_title, y_title, scale='linear', width=800, height=450):
+def points_average_and_trend(points, line, colour, date_col, x_title, y_title, scale='linear', width=800, height=450, x_type='temporal'):
     if scale=='log':
         y_title += ' (log scale)'
     line_df = line[(~line.isna()) & (line != 0)].reset_index(name='line')
@@ -565,7 +581,7 @@ def points_average_and_trend(points, line, colour, date_col, x_title, y_title, s
         encode_point_args = {
             'x': altair.X(
                 field=date_col,
-                type='temporal',
+                type=x_type,
                 axis=altair.Axis(title=x_title),
             ),
             'y': altair.Y(
@@ -582,7 +598,7 @@ def points_average_and_trend(points, line, colour, date_col, x_title, y_title, s
         encode_line_args = {
             'x': altair.X(
                 field=date_col,
-                type='temporal'
+                type=x_type
             ),
             'y': altair.Y(
                 field='line',
@@ -606,7 +622,7 @@ def points_average_and_trend(points, line, colour, date_col, x_title, y_title, s
         encode_point_args = {
             'x': altair.X(
                 field=date_col,
-                type='temporal',
+                type=x_type,
                 axis=altair.Axis(title=x_title),
             ),
             'y': altair.Y(
@@ -622,7 +638,7 @@ def points_average_and_trend(points, line, colour, date_col, x_title, y_title, s
         encode_line_args = {
             'x': altair.X(
                 field=date_col,
-                type='temporal'
+                type=x_type
             ),
             'y': altair.Y(
                 field='line',
@@ -707,13 +723,13 @@ plot_points_average_and_trend(
     ],
     '%s COVID-19 %s (7-day mean) reported on %s' %(
         'UK',
-        'cases',
+        'cases per 100k people',
         datetime.datetime.today().strftime('%A %-d %B %Y'),
     )
 )
 
 # %%
-plot_points_average_and_trend(
+p = plot_points_average_and_trend(
     [
         {
             'points': df[(df['Nation']=='Northern Ireland') & (df['Date'] > '2021-06-01')].set_index('Date')['newCasesBySpecimenDate'],
@@ -744,36 +760,195 @@ plot_points_average_and_trend(
 )
 
 # %%
-start_date = '2020-12-01'
-end_date = '2021-01-15'
+def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date):
+    return plot_points_average_and_trend(
+        [
+            {
+                'points': df[(df['Nation']=='Northern Ireland') & (df['Date'] >= start_date) & (df['Date'] <= end_date)].set_index('Date')['newCasesBySpecimenDate'],
+                'line': df[(df['Nation']=='Northern Ireland') & (df['Date'] >= start_date) & (df['Date'] <= end_date)].set_index('Date')['New cases 7-day rolling mean'],
+                'colour': '#076543',
+                'date_col': 'Date',
+                'x_title': 'Specimen Date',
+                'y_title': 'New cases',
+                'scale': 'linear',
+                'height': 225
+            },
+            {
+                'points': admissions[(admissions['Admission Date'] >= start_date) & (admissions['Admission Date'] <= end_date)].set_index('Admission Date')['Number of Admissions'],
+                'line': admissions[(admissions['Admission Date'] >= start_date) & (admissions['Admission Date'] <= end_date)].set_index('Admission Date')['Number of Admissions 7-day rolling mean'],
+                'colour': '#076543',
+                'date_col': 'Admission Date',
+                'x_title': 'Date of Admission',
+                'y_title': 'Hospital admissions',
+                'scale': 'linear',
+                'height': 225
+            },
+            {
+                'points': deaths[(deaths['Date of Death'] >= start_date) & (deaths['Date of Death'] <= end_date)].set_index('Date of Death')['Number of Deaths'],
+                'line': deaths[(deaths['Date of Death'] >= start_date) & (deaths['Date of Death'] <= end_date)].set_index('Date of Death')['Number of Deaths 7-day rolling mean'],
+                'colour': '#076543',
+                'date_col': 'Date of Death',
+                'x_title': 'Date of Death',
+                'y_title': 'Deaths within 28 days of positive test',
+                'scale': 'linear',
+                'height': 225
+            },
+        ],
+        '%s COVID-19 %s (daily and 7-day mean) between %s and %s' %(
+            'Northern Ireland',
+            'cases and admissions',
+            datetime.datetime.strptime(start_date, '%Y-%m-%d').strftime('%-d %B %Y'),
+            datetime.datetime.strptime(end_date, '%Y-%m-%d').strftime('%-d %B %Y'),
+        )
+    )
+
+# %% All data
+# Note how the cases peak is behind the admissions peak as testing ramps up
+# The deaths peak is around 21 days after the admissions peak
+plot_key_ni_stats_date_range(df, admissions, deaths, '2020-03-18', '2021-07-23')
+
+# %% First wave
+# Note how the cases peak is behind the admissions peak as testing ramps up
+# The deaths peak is around 21 days after the admissions peak
+plot_key_ni_stats_date_range(df, admissions, deaths, '2020-03-18', '2020-05-31')
+
+# %% Winter 2020 peak
+# Admissions peak is 10 days after the cases peak
+# Deaths peak is 9 days after the admissions peak
+plot_key_ni_stats_date_range(df, admissions, deaths, '2020-12-01', '2021-03-01')
+
+# %% Summer 2021 growth
+plot_key_ni_stats_date_range(df, admissions, deaths, '2021-06-01', '2021-07-22')
+
+# %%
+waves = pandas.DataFrame()
+for wave in [
+#    {
+#        'name': 'Spring 2020',
+#        'start_date': '2020-02-23',
+#        'end_date': '2020-08-28',
+#    },
+    {
+        'name': 'Autumn 2020',
+        'start_date': '2020-08-29',
+        'end_date': '2021-06-10',
+    },
+    {
+        'name': 'Summer 2021',
+        'start_date': '2021-06-11',
+        'end_date': '2021-09-30',
+    },
+]:
+    wavedf = pandas.DataFrame(pandas.date_range(wave['start_date'], wave['end_date']), columns=['Date'])
+    wavedf['Wave'] = wave['name']
+    wavedf['Wave start'] = pandas.to_datetime(wave['start_date'])
+    waves = pandas.concat([
+        waves,
+        wavedf
+    ])
+nidf = df.merge(waves, left_on='Date', right_on='Date')
+nidf['Days from start'] = (nidf['Date'] - nidf['Wave start']).dt.days
+hospdf = admissions.merge(waves, left_on='Admission Date', right_on='Date')
+hospdf['Days from start'] = (hospdf['Admission Date'] - hospdf['Wave start']).dt.days
+deathsdf = deaths.merge(waves, left_on='Date of Death', right_on='Date')
+deathsdf['Days from start'] = (deathsdf['Date of Death'] - deathsdf['Wave start']).dt.days
+trim_days = 50
 plot_points_average_and_trend(
     [
         {
-            'points': df[(df['Nation']=='Northern Ireland') & (df['Date'] >= start_date) & (df['Date'] <= end_date)].set_index('Date')['newCasesBySpecimenDate'],
-            'line': df[(df['Nation']=='Northern Ireland') & (df['Date'] >= start_date) & (df['Date'] <= end_date)].set_index('Date')['New cases 7-day rolling mean'],
-            'colour': '#076543',
-            'date_col': 'Date',
-            'x_title': 'Specimen Date',
+            'points': None, #nidf[(nidf['Nation']=='Northern Ireland') & (nidf['Days from start'] < trim_days)].set_index(['Days from start','Wave'])['newCasesBySpecimenDate'],
+            'line': nidf[(nidf['Nation']=='Northern Ireland') & (nidf['Days from start'] < trim_days)].set_index(['Days from start','Wave'])['New cases 7-day rolling mean'],
+            'colour': 'Wave',
+            'date_col': 'Days from start',
+            'x_title': 'Days from start of wave',
             'y_title': 'New cases',
             'scale': 'linear',
-            'height': 225
+            'height': 225,
+            'x_type': 'ordinal'
         },
         {
-            'points': admissions[(admissions['Admission Date'] >= start_date) & (admissions['Admission Date'] <= end_date)].set_index('Admission Date')['Number of Admissions'],
-            'line': admissions[(admissions['Admission Date'] >= start_date) & (admissions['Admission Date'] <= end_date)].set_index('Admission Date')['Number of Admissions 7-day rolling mean'],
-            'colour': '#076543',
-            'date_col': 'Admission Date',
-            'x_title': 'Date',
+            'points': None, #hospdf[hospdf['Days from start'] < trim_days].set_index(['Wave','Days from start'])['Number of Admissions'],
+            'line': hospdf[hospdf['Days from start'] < trim_days].set_index(['Wave','Days from start'])['Number of Admissions 7-day rolling mean'],
+            'colour': 'Wave',
+            'date_col': 'Days from start',
+            'x_title': 'Days from start of wave',
             'y_title': 'Hospital admissions',
             'scale': 'linear',
-            'height': 225
+            'height': 225,
+            'x_type': 'ordinal'
+        },
+        {
+            'points': None, #deathsdf[deathsdf['Days from start'] < trim_days].set_index(['Wave','Days from start'])['Number of Deaths'],
+            'line': deathsdf[deathsdf['Days from start'] < trim_days].set_index(['Wave','Days from start'])['Number of Deaths 7-day rolling mean'],
+            'colour': 'Wave',
+            'date_col': 'Days from start',
+            'x_title': 'Days from start of wave',
+            'y_title': 'Deaths within 28 days of positive test',
+            'scale': 'linear',
+            'height': 225,
+            'x_type': 'ordinal'
         },
     ],
-    '%s COVID-19 %s (daily and 7-day mean) reported on %s' %(
+    '%s COVID-19 %s (daily and 7-day mean) in each phase of the pandemic' %(
         'Northern Ireland',
-        'cases and admissions',
-        datetime.datetime.strptime(end_date, '%Y-%m-%d').strftime('%A %-d %B %Y'),
+        'cases, admissions and deaths',
     )
 )
 
+# %% Build dataframe for predicting admissions from cases
+def predict_admissions_from_cases(df, admissions, case_col, adm_col, day_gap, days_to_use, train_start, train_end, test_start):
+    pred_hosp_from_cases = df[(df['Nation']=='Northern Ireland')][['Date',case_col]].dropna()
+    pred_hosp_from_cases['Date'] = pred_hosp_from_cases['Date'] + pandas.DateOffset(days=3)
+    hosp = admissions[['Admission Date',adm_col]]
+    hosp['Admission Date'] = hosp['Admission Date'] + pandas.DateOffset(days=3)
+    hosp['Date'] = hosp['Admission Date'] - pandas.DateOffset(days=day_gap)
+    hosp.rename(columns={adm_col: 'Actual'}, inplace=True)
+    pred_hosp_from_cases = pred_hosp_from_cases.merge(hosp, how='left', left_on='Date', right_on='Date')
+    for i in range(days_to_use):
+        pred_hosp_from_cases[i] = pred_hosp_from_cases[case_col].shift(i)
+    regr = LinearRegression()
+    x_cols = [i for i in range(days_to_use)]
+    train = pred_hosp_from_cases[(pred_hosp_from_cases['Date'] >= train_start) & ((pred_hosp_from_cases['Date'] < train_end))]
+    test = pred_hosp_from_cases[(pred_hosp_from_cases['Date'] >= test_start)]
+    regr.fit(train[x_cols], train['Actual'])
+    train['Predicted'] = regr.predict(train[x_cols])
+    test['Predicted'] = regr.predict(test[x_cols])
+    test['Admission Date'] = test['Date'] + pandas.DateOffset(days=day_gap)
+    test_plot = test.melt(id_vars='Admission Date', value_vars=['Actual','Predicted'])
+    train_plot = train.melt(id_vars='Admission Date', value_vars=['Actual','Predicted'])
+    print('Predicted admissions: %f' %test[~test['Actual'].isna()]['Predicted'].sum())
+    print('Actual admissions: %f' %test['Actual'].sum())
+    return altair.vconcat(
+        altair.Chart(
+            train_plot
+        ).mark_line().encode(
+            x='Admission Date:T',
+            y=altair.Y('value',axis=altair.Axis(title='Number of Admissions')),
+            color='variable'
+        ),
+        altair.Chart(
+            test_plot
+        ).mark_line().encode(
+            x='Admission Date:T',
+            y=altair.Y('value',axis=altair.Axis(title='Number of Admissions')),
+            color='variable'
+        )
+    )
+
 # %%
+predict_admissions_from_cases(df, admissions, 'New cases 7-day rolling mean', 'Number of Admissions 7-day rolling mean', 10, 5, '2020-09-01', '2020-11-01', '2021-07-01')
+
+# %%
+predict_admissions_from_cases(df, admissions, 'New cases 7-day rolling mean', 'Number of Admissions 7-day rolling mean', 10, 5, '2021-06-01', '2021-07-01', '2021-07-01')
+
+# %%
+predict_admissions_from_cases(df, admissions, 'newCasesBySpecimenDate', 'Number of Admissions', 10, 5, '2021-06-01', '2021-07-01', '2021-07-01')
+
+# %%
+(test[~test['Number of Admissions 7-day rolling mean'].isna()]['Predicted'] - test[~test['Number of Admissions 7-day rolling mean'].isna()]['Number of Admissions 7-day rolling mean']).sum()
+
+# %%
+test['Number of Admissions 7-day rolling mean'].sum()
+
+# %%
+(test['Predicted'] / test['Number of Admissions 7-day rolling mean'])
