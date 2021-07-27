@@ -87,7 +87,7 @@ df['Percentage first doses'] = (df['Total']/df['Population']).clip(upper=1.0)
 df['First doses as % of total population'] = df['Percentage first doses'] * df['% of total population']
 
 # %%
-altair.concat(
+plt = altair.concat(
     altair.Chart(df).mark_bar(
         thickness=2,
         width=25,
@@ -120,19 +120,19 @@ altair.concat(
         dy=10
     ),
 )
+plt.save('ni-eng-vacc-age-1-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+plt
+
 
 # %%
-altair.concat(
-    altair.Chart(df).mark_tick(
-        thickness=2,
-        width=25,
-        opacity=1
-    ).encode(
-        x=altair.X('Band:O', sort=altair.SortField('Order'), axis=altair.Axis(title='Age Band')),
+plt = altair.concat(
+    altair.Chart(df).mark_bar().encode(
+        x=altair.X('Nation:O', axis=None),
         y=altair.Y('% of total population:Q', axis=altair.Axis(format='%', title='Age band % of total population')),
-        color='Nation'
+        color='Nation',
+        column=altair.Column('Band:O', sort=altair.SortField('Order'), header=altair.Header(title='Age Band', labelOrient='bottom', titleOrient='bottom'), spacing=0)
     ).properties(
-        width=400,
+        width=50,
         title=altair.TitleParams(
             text='NI has a higher proportion of under 18s than England',
             subtitle=['This means that higher vaccine uptake is required in NI adults to provide',
@@ -155,21 +155,24 @@ altair.concat(
         dy=10
     ),
 )
+plt.save('ni-eng-vacc-age-2-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+plt
 
 # %%
-altair.concat(
-    altair.Chart(df).mark_tick(
+plt = altair.concat(
+    altair.Chart(df).mark_bar(
         thickness=2,
         width=25,
         opacity=1
     ).encode(
-        x=altair.X('Band:O', sort=altair.SortField('Order'), axis=altair.Axis(title='Age Band')),
+        x=altair.X('Nation:O', axis=None),
         y=altair.Y('Percentage first doses:Q', axis=altair.Axis(format='%', title='First doses completed')),
-        color='Nation'
+        color='Nation',
+        column=altair.Column('Band:O', sort=altair.SortField('Order'), header=altair.Header(title='Age Band', labelOrient='bottom', titleOrient='bottom'), spacing=0)
     ).properties(
-        width=400,
+        width=50,
         title=altair.TitleParams(
-            text='England is ahead of NI in first vaccine doses for under 60s',
+            text='NI first dose uptake is lower for adults aged 18-60',
             subtitle='The gap is widest in the 30-39 age band',
             align='left',
             anchor='start',
@@ -190,6 +193,8 @@ altair.concat(
         dy=10
     ),
 )
+plt.save('ni-eng-vacc-age-3-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+plt
 
 
 # %%
