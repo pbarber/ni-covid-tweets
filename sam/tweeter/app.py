@@ -204,14 +204,20 @@ def lambda_handler(event, context):
         options.add_argument("--disk-cache-dir=/tmp/disk-cache/")
         options.add_argument("--disable-async-dns")
         plots = []
-        try:
-            driver = webdriver.Chrome(service_log_path='/tmp/chromedriver.log', options=options)
-        except:
-            logging.exception('Failed to setup chromium')
-            with open('/tmp/chromedriver.log') as log:
-                logging.warning(log.read())
-            logging.error([f for f in os.listdir('/tmp/')])
+        driver = None
+        for attempt in range(3):
+            try:
+                driver = webdriver.Chrome(service_log_path='/tmp/chromedriver.log', options=options)
+            except:
+                logging.exception('Failed to setup chromium')
+                with open('/tmp/chromedriver.log') as log:
+                    logging.warning(log.read())
+                logging.error([f for f in os.listdir('/tmp/')])
+            else:
+                break
         else:
+            logging.error('Failed to set up webdriver after %d attempts' %(attempt+1))
+        if driver is not None:
             p = plot_points_average_and_trend(
                 df[(df['Sample_Date'] > (latest['Sample_Date'] - pandas.to_timedelta(42, unit='d')))],
                 '#076543',
