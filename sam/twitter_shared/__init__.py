@@ -26,3 +26,10 @@ class TwitterAPI:
 
     def upload(self, fp, name):
         return(self.api.media_upload(filename=name, file=fp))
+
+    def upload_multiple(self, configs):
+        ids = []
+        for c in configs:
+            resp = self.upload(c['store'], c['name'])
+            ids.append(resp.media_id)
+        return ids

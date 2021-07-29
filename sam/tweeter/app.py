@@ -8,10 +8,10 @@ import boto3
 import pandas
 import numpy
 import altair
-from selenium import webdriver
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
+from plot_shared import get_chrome_driver
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -315,37 +315,8 @@ def lambda_handler(event, context):
         deaths['Number of Deaths 7-day rolling mean'] = deaths['Number of Deaths'].rolling(7, center=True).mean()
 
         # Plot the case reports and 7-day average
-        options = webdriver.ChromeOptions()
-        options.headless = True
-        options.add_argument('--no-sandbox')
-        options.add_argument('--disable-dev-shm-usage')
-        options.add_argument("--window-size=1280,720")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--hide-scrollbars")
-        options.add_argument("--disable-infobars")
-        options.add_argument("--enable-logging")
-        options.add_argument("--log-level=0")
-        options.add_argument("--v=99")
-        options.add_argument("--single-process")
-        options.add_argument("--user-data-dir=/tmp/user-data/")
-        options.add_argument("--data-path=/tmp/data/")
-        options.add_argument("--homedir=/tmp/homedir/")
-        options.add_argument("--disk-cache-dir=/tmp/disk-cache/")
-        options.add_argument("--disable-async-dns")
+        driver = get_chrome_driver()
         plots = []
-        driver = None
-        for attempt in range(3):
-            try:
-                driver = webdriver.Chrome(service_log_path='/tmp/chromedriver.log', options=options)
-            except:
-                logging.exception('Failed to setup chromium')
-                with open('/tmp/chromedriver.log') as log:
-                    logging.warning(log.read())
-                logging.error([f for f in os.listdir('/tmp/')])
-            else:
-                break
-        else:
-            logging.error('Failed to set up webdriver after %d attempts' %(attempt+1))
         if driver is not None:
             p = plot_key_ni_stats_date_range(df, admissions, deaths, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'), latest['Sample_Date'], 'linear')
             try:
@@ -475,15 +446,10 @@ def lambda_handler(event, context):
                     secret['twitter_accesstoken'],
                     secret['twitter_accesstokensecret']
                 )
-                if len(t['plots']) > 0:
-                    resp = api.upload(t['plots'][0]['store'], t['plots'][0]['name'])
-                if len(t['plots']) > 1:
-                    resp2 = api.upload(t['plots'][1]['store'], t['plots'][1]['name'])
+                upload_ids = api.upload_multiple(t['plots'])
                 if t['tweet'] is True:
-                    if len(t['plots']) > 1:
-                        resp = api.tweet(t['text'] + t['url'], media_ids=[resp.media_id, resp2.media_id])
                     if len(t['plots']) > 0:
-                        resp = api.tweet(t['text'] + t['url'], media_ids=[resp.media_id])
+                        resp = api.tweet(t['text'] + t['url'], media_ids=upload_ids)
                     else:
                         resp = api.tweet(t['text'] + t['url'])
                     messages.append('Tweeted ID %s, ' %resp.id)
@@ -491,13 +457,13 @@ def lambda_handler(event, context):
                         resp = api.tweet(t['text2'], resp.id)
                         messages[-1] += ('ID %s, ' %resp.id)
                 else:
-                    if len(t['plots']) > 0:
-                        resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'], resp.media_id)
+                    if len(upload_ids) > 0:
+                        resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'], upload_ids[0])
                     else:
                         resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'])
                     messages.append('Tweeted DM %s, ' %resp.id)
-                    if len(t['plots']) > 1:
-                        resp = api.dm(secret['twitter_dmaccount'], t['text2'], resp2.media_id)
+                    if len(upload_ids) > 1:
+                        resp = api.dm(secret['twitter_dmaccount'], t['text2'], upload_ids[1])
                     else:
                         resp = api.dm(secret['twitter_dmaccount'], t['text2'])
             else:

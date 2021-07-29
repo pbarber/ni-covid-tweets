@@ -11,37 +11,10 @@ from selenium import webdriver
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
+from plot_shared import get_chrome_driver
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
-
-def setup_selenium():
-    options = webdriver.ChromeOptions()
-    options.headless = True
-    options.add_argument('--no-sandbox')
-    options.add_argument('--disable-dev-shm-usage')
-    options.add_argument("--window-size=1280,720")
-    options.add_argument("--disable-gpu")
-    options.add_argument("--hide-scrollbars")
-    options.add_argument("--disable-infobars")
-    options.add_argument("--enable-logging")
-    options.add_argument("--log-level=0")
-    options.add_argument("--v=99")
-    options.add_argument("--single-process")
-    options.add_argument("--user-data-dir=/tmp/user-data/")
-    options.add_argument("--data-path=/tmp/data/")
-    options.add_argument("--homedir=/tmp/homedir/")
-    options.add_argument("--disk-cache-dir=/tmp/disk-cache/")
-    options.add_argument("--disable-async-dns")
-    try:
-        driver = webdriver.Chrome(service_log_path='/tmp/chromedriver.log', options=options)
-    except:
-        logging.exception('Failed to setup chromium')
-        with open('/tmp/chromedriver.log') as log:
-            logging.warning(log.read())
-        logging.error([f for f in os.listdir('/tmp/')])
-        raise
-    return driver
 
 def lambda_handler(event, context):
     messages = []
@@ -145,7 +118,9 @@ def lambda_handler(event, context):
                 tweet += f"\u2022 Others: {others:,d}\n"
             tweet += '\nSource: https://beta.microreact.org/'
 
-            driver = setup_selenium()
+            driver = get_chrome_driver()
+            if driver is None:
+                raise Exception('Failed to start chrome')
 
             p = altair.vconcat(
                 altair.Chart(
