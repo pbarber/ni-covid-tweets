@@ -34,14 +34,14 @@ def lambda_handler(event, context):
             fp.write(resp.content)
         # Get the date range covered by the report
         text = textract.process(tmp.name, method='pdfminer').decode('utf-8')
-        regex = re.compile(r'between (\d{1,2})(?:st|nd|rd|th)\s+([A-Z][a-z]+)\s+(\d{4})\s+.+\s+(\d{1,2})(?:st|nd|rd|th)\s+([A-Z][a-z]+)\s+(\d{4})')
+        regex = re.compile(r'between (\d{1,2})(?:st|nd|rd|th)\s+([A-Z][a-z]+)\s+(\d{4})\s+\–+\s+(\d{1,2})(?:st|nd|rd|th)\s+([A-Z][a-z]+)\s+(\d{4})')
         start_date = None
         end_date = None
         for line in text.split('\n'):
             m = regex.search(line)
             if m:
-                start_date = pandas.to_datetime('%s %s %s' %(m.group(1),m.group(2),m.group(3)), format='%d %B %Y')
-                end_date = pandas.to_datetime('%s %s %s' %(m.group(4),m.group(5),m.group(6)), format='%d %B %Y')
+                start_date = pandas.to_datetime('%s %s %s' %(m.group(1),m.group(2),m.group(3)), format='%d %B %Y').date()
+                end_date = pandas.to_datetime('%s %s %s' %(m.group(4),m.group(5),m.group(6)), format='%d %B %Y').date()
                 break
         if start_date is None:
             logging.error('Unable to find start date in report')
@@ -79,9 +79,9 @@ def lambda_handler(event, context):
                 logging.warning('Unexpected table: %s' %df)
             tablecount += 1
             dataset = pandas.concat([dataset, df])
-        dataset['Start Date'] = start_date
-        dataset['End Date'] = end_date
-        week = int((end_date - pandas.to_datetime('1 January 2020', format='%d %B %Y')).days / 7)
+        dataset['Start Date'] = pandas.to_datetime(start_date)
+        dataset['End Date'] = pandas.to_datetime(end_date)
+        week = int((end_date - pandas.to_datetime('1 January 2020', format='%d %B %Y').date()).days / 7)
         dataset['Week'] = week
         # Create a simple summary and the tweet text
         summary = dataset.groupby('Metric').sum()
@@ -98,12 +98,12 @@ def lambda_handler(event, context):
         else:
             stream = io.BytesIO(obj.read())
             datastore = pandas.read_csv(stream)
-            datastore['Start Date'] = pandas.to_datetime(datastore['Start Date'])
-            datastore['End Date'] = pandas.to_datetime(datastore['End Date'])
         # Clean out any data with matching dates
         datastore = datastore[datastore['Week'] != week]
         # Append the new data
         datastore = pandas.concat([datastore, dataset])
+        datastore['Start Date'] = pandas.to_datetime(datastore['Start Date'])
+        datastore['End Date'] = pandas.to_datetime(datastore['End Date'])
         # Replace any known duplicates
         datastore['Setting'] = datastore['Setting'].replace({
             'Cinema/ Theatre / Entertainment': 'Cinema / Theatre / Entertainment Venue',
@@ -161,7 +161,7 @@ def lambda_handler(event, context):
                 ).properties(
                     height=450,
                     width=800,
-                    title='NI COVID-19 Contact Tracing reports from %s to %s' %(datastore['Start Date'].min().strftime('%-d %B %Y'), datastore['End Date'].min().strftime('%-d %B %Y'))
+                    title='NI COVID-19 Contact Tracing reports from %s to %s' %(datastore['Start Date'].min().strftime('%-d %B %Y'), datastore['End Date'].max().strftime('%-d %B %Y'))
                 ),
             ).properties(
                 title=altair.TitleParams(
@@ -193,7 +193,7 @@ def lambda_handler(event, context):
                     height=90,
                     width=160,
                     title=altair.TitleParams(
-                        'NI COVID-19 Contact Tracing reports by setting from %s to %s' %(datastore['Start Date'].min().strftime('%-d %B %Y'), datastore['End Date'].min().strftime('%-d %B %Y')),
+                        'NI COVID-19 Contact Tracing reports by setting from %s to %s' %(datastore['Start Date'].min().strftime('%-d %B %Y'), datastore['End Date'].max().strftime('%-d %B %Y')),
                         anchor='middle',
                     ),
                 ),
@@ -215,6 +215,10 @@ def lambda_handler(event, context):
             p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
             plotstore.seek(0)
             plots.append({'name': plotname, 'store': plotstore})
+
+        # Convert to dates to ensure correct output to CSV
+        datastore['Start Date'] = datastore['Start Date'].dt.date
+        datastore['End Date'] = datastore['End Date'].dt.date
 
         # Tweet out the text and images
         if change.get('notweet') is not True:
