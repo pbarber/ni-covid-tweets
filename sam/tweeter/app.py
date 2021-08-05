@@ -7,7 +7,6 @@ import logging
 import boto3
 import pandas
 import numpy
-import altair
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
@@ -175,8 +174,8 @@ def lambda_handler(event, context):
             pos_rate=latest['pos_rate'],
             symb_7d=symb_7d,
             est=est,
-            model_daily=last_but1_model['Rolling cases per 100k model_daily_change'],
-            model_weekly=last_but1_model['Rolling cases per 100k model_weekly_change'],
+            model_daily=abs(last_but1_model['Rolling cases per 100k model_daily_change']),
+            model_weekly=abs(last_but1_model['Rolling cases per 100k model_weekly_change']),
             pos_7d=int(round(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7,0)),
             dir_model='falling' if last_but1_model['Rolling cases per 100k model_daily_change']<0 else 'rising',
             tag_model=good_symb if last_but1_model['Rolling cases per 100k model_daily_change']<0 else bad_symb,
@@ -222,8 +221,8 @@ def lambda_handler(event, context):
         tweet2 += '''
 
 {tag_model} admissions {dir_model} by {model_daily:.1%} per day, {model_weekly:.1%} per week, {doub} time {doub_time:.1f} days'''.format(
-            model_daily=latest_adm_model['Number of Admissions 7-day rolling mean model_daily_change'],
-            model_weekly=latest_adm_model['Number of Admissions 7-day rolling mean model_weekly_change'],
+            model_daily=abs(latest_adm_model['Number of Admissions 7-day rolling mean model_daily_change']),
+            model_weekly=abs(latest_adm_model['Number of Admissions 7-day rolling mean model_weekly_change']),
             dir_model='falling' if latest_adm_model['Number of Admissions 7-day rolling mean model_daily_change']<0 else 'rising',
             tag_model=good_symb if latest_adm_model['Number of Admissions 7-day rolling mean model_daily_change']<0 else bad_symb,
             doub='halving' if (latest_adm_model['Number of Admissions 7-day rolling mean model0'] < 0) else 'doubling',
