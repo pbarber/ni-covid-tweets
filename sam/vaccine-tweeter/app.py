@@ -61,7 +61,7 @@ def lambda_handler(event, context):
             blocks[i//5] += white_block
         else:
             blocks[i//5] += black_block
-    tweet2 = '''Proportion over 18 vaccinated in NI:
+    tweet2 = '''Proportion 16+ vaccinated in NI:
 
 {blocks0}
 {blocks1}
