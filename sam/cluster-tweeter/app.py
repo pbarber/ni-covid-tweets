@@ -72,9 +72,9 @@ def lambda_handler(event, context):
             df['Closed'] = df['Closed'].astype(int)
             df = df[df['Setting']!='Total']
             if tablecount==0:
-                df['Metric'] = 'Probable Outbreak'
+                df['Type'] = 'Probable Outbreak'
             elif tablecount==1:
-                df['Metric'] = 'Cluster'
+                df['Type'] = 'Cluster'
             else:
                 logging.warning('Unexpected table: %s' %df)
             tablecount += 1
@@ -84,10 +84,10 @@ def lambda_handler(event, context):
         week = int((end_date - pandas.to_datetime('1 January 2020', format='%d %B %Y').date()).days / 7)
         dataset['Week'] = week
         # Create a simple summary and the tweet text
-        summary = dataset.groupby('Metric').sum()
+        summary = dataset.groupby('Type').sum()
         tweet = 'NI Contact Tracing reports from %s to %s:\n' %(start_date.strftime('%-d %B %Y'), end_date.strftime('%-d %B %Y'))
-        for metric,data in summary.to_dict('index').items():
-            tweet += '\u2022 %d %ss (%d open, %d closed)\n' %(data['Total'], metric.lower(), data['Open'], data['Closed'])
+        for Type,data in summary.to_dict('index').items():
+            tweet += '\u2022 %d %ss (%d open, %d closed)\n' %(data['Total'], Type.lower(), data['Open'], data['Closed'])
         tweet += '\n%s' %change['url']
         # Pull current data from s3
         try:
@@ -128,7 +128,11 @@ def lambda_handler(event, context):
                 ).mark_bar().encode(
                     x = altair.X('Total:Q', axis=altair.Axis(title='Total reported')),
                     y = altair.Y('Setting:O'),
-                    color='Metric'
+                    color='Type',
+                    order=altair.Order(
+                        'Type',
+                        sort='ascending'
+                    ),
                 ).properties(
                     height=450,
                     width=800,
@@ -137,6 +141,7 @@ def lambda_handler(event, context):
             ).properties(
                 title=altair.TitleParams(
                     ['Data from Public Health Agency',
+                    'Data covers the preceding four weeks',
                     'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
                     baseline='bottom',
                     orient='bottom',
@@ -153,11 +158,15 @@ def lambda_handler(event, context):
             plots.append({'name': plotname, 'store': plotstore})
             p = altair.vconcat(
                 altair.Chart(
-                    (datastore.groupby(['End Date','Metric'])['Total'].sum() / 4.0).reset_index()
+                    datastore.groupby(['End Date','Type'])['Total'].sum().reset_index()
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='Date reported (for preceding four weeks)')),
                     y = altair.Y('Total:Q', axis=altair.Axis(title='Total reported divided by 4', orient="right")),
-                    color='Metric'
+                    color='Type',
+                    order=altair.Order(
+                        'Type',
+                        sort='ascending'
+                    ),
                 ).properties(
                     height=450,
                     width=800,
@@ -166,7 +175,7 @@ def lambda_handler(event, context):
             ).properties(
                 title=altair.TitleParams(
                     ['Data from Public Health Agency',
-                    'Data is reported weekly for the preceding four weeks, so totals are divided by 4',
+                    'Data is reported weekly for the preceding four weeks',
                     'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
                     baseline='bottom',
                     orient='bottom',
@@ -183,12 +192,16 @@ def lambda_handler(event, context):
             plots.append({'name': plotname, 'store': plotstore})
             p = altair.vconcat(
                 altair.Chart(
-                    (datastore.groupby(['End Date','Setting','Metric'])['Total'].sum() / 4.0).reset_index()
+                    datastore.groupby(['End Date','Setting','Type'])['Total'].sum().reset_index()
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='')),
                     y = altair.Y('Total:Q', axis=altair.Axis(title='', orient="right")),
-                    color='Metric',
+                    color='Type',
                     facet=altair.Facet('Setting:O', columns=5, title=None, spacing=0),
+                    order=altair.Order(
+                        'Type',
+                        sort='ascending'
+                    ),
                 ).properties(
                     height=90,
                     width=160,
@@ -200,7 +213,7 @@ def lambda_handler(event, context):
             ).properties(
                 title=altair.TitleParams(
                     ['Data from Public Health Agency',
-                    'Data is reported weekly for the preceding four weeks, so totals are divided by 4',
+                    'Data is reported weekly for the preceding four weeks',
                     'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
                     baseline='bottom',
                     orient='bottom',
@@ -226,7 +239,11 @@ def lambda_handler(event, context):
             upload_ids = api.upload_multiple(plots)
             if change.get('testtweet') is True:
                 if len(upload_ids) > 0:
-                    resp = api.dm(secret['twitter_dmaccount'], tweet, upload_ids[-1])
+                    resp = api.dm(secret['twitter_dmaccount'], tweet, upload_ids[0])
+                    if len(upload_ids) > 1:
+                        resp = api.dm(secret['twitter_dmaccount'], 'Test 1', upload_ids[1])
+                        if len(upload_ids) > 2:
+                            resp = api.dm(secret['twitter_dmaccount'], 'Test 2', upload_ids[2])
                 else:
                     resp = api.dm(secret['twitter_dmaccount'], tweet)
                 messages.append('Tweeted DM ID %s' %(resp.id))
