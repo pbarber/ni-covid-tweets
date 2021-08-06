@@ -2,11 +2,12 @@
 
 This repository holds the source code for [an unofficial Twitter bot](https://twitter.com/ni_covid19_data) which summarises and posts data about COVID-19 in Northern Ireland (NI). The bot posts:
 
-* daily updates on vaccinations
-* daily updates on tests and cases
-* weekly updates on R number estimates
-* weekly updates on NISRA deaths statistics
-* ad-hoc updates of COG-UK variant counts
+* daily updates on [vaccinations](#vaccinations)
+* daily updates on [tests and cases](#tests-and-cases)
+* weekly updates on [R number](#r-number) estimates
+* weekly updates on NISRA [deaths](#deaths) statistics
+* weekly updates on [clusters and outbreaks](#clusters-and-outbreaks)
+* ad-hoc updates of COG-UK [variant counts](#variants)
 * occasional interesting charts
 
 ## Vaccinations
@@ -37,6 +38,10 @@ The DoH publishes [R number estimates](https://www.health-ni.gov.uk/R-Number) on
 ## Deaths
 
 NISRA publishes [weekly deaths statistics](https://www.nisra.gov.uk/publications/weekly-death-statistics-northern-ireland-2021) when the number of deaths registered in a week is five or more.
+
+## Clusters and outbreaks
+
+NI's Public Health Agency (PHA) has published [weekly updates on clusters and probably outbreaks](https://www.publichealth.hscni.net/publications/covid-19-clusteroutbreak-summary) since early 2021. The data is published weekly but covers the preceding four weeks. The charts show the totals for each category (clusters/outbreaks). It would be preferable to show the number of new clusters/outbreaks on a weekly basis but it has not been possible to accurately calculate this from the reports.
 
 ## Variants
 
