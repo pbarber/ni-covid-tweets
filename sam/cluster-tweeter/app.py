@@ -139,8 +139,8 @@ def lambda_handler(event, context):
                 ),
             ).properties(
                 title=altair.TitleParams(
-                    ['Data from Public Health Agency',
-                    'Data covers the preceding four weeks',
+                    ['Data from Public Health Agency, does not include education or home settings',
+                    'Covers the preceding four weeks',
                     'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
                     baseline='bottom',
                     orient='bottom',
@@ -160,7 +160,7 @@ def lambda_handler(event, context):
                     datastore.groupby(['End Date','Type'])['Total'].sum().reset_index()
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='Date reported (for preceding four weeks)')),
-                    y = altair.Y('Total:Q', axis=altair.Axis(title='Total reported divided by 4', orient="right")),
+                    y = altair.Y('Total:Q', axis=altair.Axis(title='Total reported', orient="right")),
                     color='Type',
                     order=altair.Order(
                         'Type',
@@ -173,8 +173,8 @@ def lambda_handler(event, context):
                 ),
             ).properties(
                 title=altair.TitleParams(
-                    ['Data from Public Health Agency',
-                    'Data is reported weekly for the preceding four weeks',
+                    ['Data from Public Health Agency, does not include education or home settings',
+                    'Reported weekly for the preceding four weeks',
                     'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
                     baseline='bottom',
                     orient='bottom',
@@ -211,8 +211,8 @@ def lambda_handler(event, context):
                 ),
             ).properties(
                 title=altair.TitleParams(
-                    ['Data from Public Health Agency',
-                    'Data is reported weekly for the preceding four weeks',
+                    ['Data from Public Health Agency, does not include education or home settings',
+                    'Reported weekly for the preceding four weeks',
                     'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
                     baseline='bottom',
                     orient='bottom',
