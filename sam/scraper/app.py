@@ -442,7 +442,7 @@ def check_clusters(secret, s3, notweet):
         totweet = [c['index'] for c in changes if (c['change'] == 'added') or (c['index'] == 0)]
         if not notweet and (0 in totweet):
             print('Launching PHA clusters tweeter')
-            launch_lambda_async(os.getenv('CLUSTERS_TWEETER_LAMBDA'),[dict(current[a], testtweet=True) for a in totweet])
+            launch_lambda_async(os.getenv('CLUSTERS_TWEETER_LAMBDA'),[current[a] for a in totweet])
             message += ', and launched clusters tweet lambda'
     else:
         message = 'Did nothing'
