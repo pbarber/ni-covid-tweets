@@ -11,11 +11,11 @@ import boto3
 
 from shared import S3_scraper_index, launch_lambda_async, get_url, get_and_sort_index
 
-def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y'):
+def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y',element="div",htmlclass="nigovfile"):
     html = BeautifulSoup(text,features="html.parser")
     files = []
     regex = re.compile(regex, flags=re.IGNORECASE)
-    for nigovfile in html.find_all("div", {"class": "nigovfile"}):
+    for nigovfile in html.find_all(element, {"class": htmlclass}):
         for a in nigovfile.find_all('a', href=True):
             m = regex.search(a['href'])
             if m:
@@ -29,7 +29,10 @@ def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y'):
                 filedate = datetime.datetime.strptime(datestr,datefmt)
                 if 'Last-Modified' in resp.headers:
                     modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
-                    files.append({'url': a['href'],'modified': modified.isoformat(),'length': int(resp.headers['Content-Length']), 'filedate': filedate.date().isoformat()})
+                    if 'Content-Length' in resp.headers:
+                        files.append({'url': a['href'],'modified': modified.isoformat(),'length': int(resp.headers['Content-Length']), 'filedate': filedate.date().isoformat()})
+                    else:
+                        files.append({'url': a['href'],'modified': modified.isoformat(),'filedate': filedate.date().isoformat()})
                 else:
                     files.append({'url': a['href'],'filedate': filedate.date().isoformat()})
                 if len(files)>=number:
@@ -56,9 +59,15 @@ def check_file_list_against_previous(current, previous):
             # If a new, older date
             changes.append({'index': len(previous), 'change': 'added'})
             previous.append(e)
-        elif 'modified' in match and ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
-            changes.append({'index': previous.index(match), 'change': 'modified'})
-            previous[changes[-1]['index']] = e
+        elif 'modified' in match:
+            if 'length' in match:
+                if ((match['modified'] != e['modified']) or (match['length'] != e['length'])):
+                    changes.append({'index': previous.index(match), 'change': 'modified'})
+                    previous[changes[-1]['index']] = e
+            else:
+                if match['modified'] != e['modified']:
+                    changes.append({'index': previous.index(match), 'change': 'modified'})
+                    previous[changes[-1]['index']] = e
     return previous, changes
 
 def upload_changes_to_s3(s3client, bucket, dirname, index, changes, fileext):
@@ -406,6 +415,40 @@ def check_cog(secret, s3, notweet):
 
     return message
 
+def check_for_cluster_files(s3, bucketname, previous):
+    # Attempt to pull the list of cluster publications
+    session = requests.Session()
+    url = 'https://www.publichealth.hscni.net/publications/covid-19-clusteroutbreak-summary'
+    pdfs = extract_doh_file_list(get_url(session, url,'text'), 1, r'(\d{2}_\d{2}_\d{2})\.pdf$', datefmt='%d_%m_%y', element='span', htmlclass='file--application-pdf')
+    # Check whether we have new files
+    index, changes = check_file_list_against_previous(pdfs, previous)
+    # Upload the changed files to s3
+    index = upload_changes_to_s3(s3, bucketname, 'PHA-clusters', index, changes, 'pdf')
+    return index, changes
+
+def check_clusters(secret, s3, notweet):
+    indexkey = secret['pha-clusters-index']
+    previous, index = get_and_sort_index(secret['bucketname'], indexkey, s3, 'filedate')
+
+    # Check the PHA page for new/updated PDFs
+    current, changes = check_for_cluster_files(s3, secret['bucketname'], previous)
+
+    # Write any changes back to S3
+    if len(changes) > 0:
+        index.put_dict(current)
+        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
+
+        # If the most recent file has changed then tweet
+        totweet = [c['index'] for c in changes if (c['change'] == 'added') or (c['index'] == 0)]
+        if not notweet and (0 in totweet):
+            print('Launching PHA clusters tweeter')
+            launch_lambda_async(os.getenv('CLUSTERS_TWEETER_LAMBDA'),[dict(current[a], testtweet=True) for a in totweet])
+            message += ', and launched clusters tweet lambda'
+    else:
+        message = 'Did nothing'
+
+    return message
+
 def get_all_doh(secret, s3):
     indexkey = secret['doh-dd-index']
 
@@ -460,6 +503,10 @@ def lambda_handler(event, context):
             messages.append(check_cog(secret, s3, event.get('cog-notweet', False)))
         except:
             logging.exception('Caught exception accessing COG variants data')
+        try:
+            messages.append(check_clusters(secret, s3, event.get('clusters-notweet', False)))
+        except:
+            logging.exception('Caught exception accessing PHA clusters data')
 
     return {
         "statusCode": 200,

@@ -34,6 +34,7 @@ Resources:
           NISRA_TWEETER_LAMBDA: !Sub ${NICOVIDNISRATweeter.Arn}
           GENERIC_TWEETER_LAMBDA: !Sub ${NICOVIDGenericTweeter.Arn}
           VARIANTS_TWEETER_LAMBDA: !Sub ${NICOVIDCOGVariantsTweeter.Arn}
+          CLUSTERS_TWEETER_LAMBDA: !Sub ${NICOVIDClusterTweeter.Arn}
   NICOVIDCasesTweeter:
     Type: AWS::Serverless::Function
     Properties:
