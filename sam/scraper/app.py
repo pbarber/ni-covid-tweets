@@ -209,7 +209,7 @@ def check_phe(previous):
     session = requests.Session()
 
     # Get the PHE data from the API
-    url = 'https://api.coronavirus.data.gov.uk/v2/data?areaType=nation&areaCode=N92000002&metric=cumPeopleVaccinatedFirstDoseByPublishDate&metric=cumPeopleVaccinatedSecondDoseByPublishDate&metric=cumVaccinationFirstDoseUptakeByPublishDatePercentage&metric=cumVaccinationSecondDoseUptakeByPublishDatePercentage&format=json'
+    url = 'https://api.coronavirus.data.gov.uk/v2/data?areaType=nation&areaCode=N92000002&metric=cumPeopleVaccinatedFirstDoseByPublishDate&metric=cumPeopleVaccinatedSecondDoseByPublishDate&format=json'
     ordered = sorted(get_url(session, url,'json').get('body',[]), key=lambda k: k['date'], reverse=True)
 
     change = False
@@ -223,8 +223,8 @@ def check_phe(previous):
             'Second Doses Registered': ordered[0]['cumPeopleVaccinatedSecondDoseByPublishDate'] - ordered[1]['cumPeopleVaccinatedSecondDoseByPublishDate'],
             'Source': 'PHE'
         }
-        data['First Doses pc'] = round((100 * data['cumPeopleVaccinatedFirstDoseByPublishDate']) / 1499694, 1)  # NI 16 and over
-        data['Second Doses pc'] = round((100 * data['cumPeopleVaccinatedSecondDoseByPublishDate']) / 1499694, 1)
+        data['First Doses pc'] = round((100 * data['Total First Doses']) / 1499694, 1)  # NI 16 and over
+        data['Second Doses pc'] = round((100 * data['Total Second Doses']) / 1499694, 1)
         if len(previous) > 0:
             if (data['Last Updated'] != previous[0]['Last Updated']):
                 previous.insert(0, data)
