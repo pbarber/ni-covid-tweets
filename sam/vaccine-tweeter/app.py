@@ -31,12 +31,17 @@ def lambda_handler(event, context):
     index = status.get_dict()
 
     tweet = '''{doses_24:,} COVID-19 vaccine doses registered in NI on {date}
-\u2022 {f_24:,} ({pct_f:.0%}) first doses
-\u2022 {s_24:,} ({pct_s:.0%}) second doses
+\u2022 {f_24:,} first
+\u2022 {s_24:,} second
+\u2022 {pct_f:.0%}/{pct_s:.0%} dose mix
 
 {total:,} total doses
-\u2022 {total_f:,} total first doses ({pop_f}% of 16+s)
-\u2022 {total_s:,} total second doses ({pop_s}% of 16+s)
+\u2022 {total_f:,} first
+\u2022 {total_s:,} second
+
+Population (16 and over) vaccinated:
+\u2022 {pop_f}% first
+\u2022 {pop_s}% second
 
 {source}'''.format(
     doses_24=event['First Doses Registered'] + event['Second Doses Registered'],
@@ -61,7 +66,7 @@ def lambda_handler(event, context):
             blocks[i//5] += white_block
         else:
             blocks[i//5] += black_block
-    tweet2 = '''Proportion of NI 16+s vaccinated against COVID-19:
+    tweet2 = '''Proportion of NI adults (16 and over) vaccinated against COVID-19:
 
 {blocks0}
 {blocks1}
