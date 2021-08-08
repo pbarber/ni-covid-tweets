@@ -30,13 +30,13 @@ def lambda_handler(event, context):
     status = S3_scraper_index(s3, secret['bucketname'], keyname)
     index = status.get_dict()
 
-    tweet = '''{doses_24:,} vaccine doses registered on {date}
-\u2022 {f_24:,} ({pct_f:.1%}) first doses
-\u2022 {s_24:,} ({pct_s:.1%}) second doses
+    tweet = '''{doses_24:,} COVID-19 vaccine doses registered in NI on {date}
+\u2022 {f_24:,} ({pct_f:.0%}) first doses
+\u2022 {s_24:,} ({pct_s:.0%}) second doses
 
 {total:,} total doses
-\u2022 {total_f:,} total first doses ({pop_f}% of NI adults)
-\u2022 {total_s:,} total second doses ({pop_s}% of NI adults)
+\u2022 {total_f:,} total first doses ({pop_f}% of 16+s)
+\u2022 {total_s:,} total second doses ({pop_s}% of 16+s)
 
 {source}'''.format(
     doses_24=event['First Doses Registered'] + event['Second Doses Registered'],
@@ -61,7 +61,7 @@ def lambda_handler(event, context):
             blocks[i//5] += white_block
         else:
             blocks[i//5] += black_block
-    tweet2 = '''Proportion 16+ vaccinated in NI:
+    tweet2 = '''Proportion of NI 16+s vaccinated against COVID-19:
 
 {blocks0}
 {blocks1}
@@ -85,22 +85,21 @@ One block is one person in 20
     if (event.get('tweet2test') is True) or (event.get('notweet') is not True):
         api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
         if event.get('notweet') is not True:
-            resp = api.tweet(tweet)
+            if event.get('testtweet') is True:
+                resp = api.dm(secret['twitter_dmaccount'], tweet)
+                resp = api.dm(secret['twitter_dmaccount'], tweet2)
+                message = 'Sent test DM'
+            else:
+                resp = api.tweet(tweet)
+                for i in range(len(index)):
+                    if index[i]['Last Updated'] == event['Last Updated']:
+                        index[i]['tweet'] = resp.id
+                        break
+                status.put_dict(index)
+                message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
 
-            for i in range(len(index)):
-                if index[i]['Last Updated'] == event['Last Updated']:
-                    index[i]['tweet'] = resp.id
-                    break
-            status.put_dict(index)
-
-            message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
-
-            resp = api.tweet(tweet2, resp.id)
-
-            message = 'Tweeted reply ID %s' %resp.id
-        elif event.get('tweet2test') is True:
-            resp = api.dm(secret['twitter_dmaccount'], tweet2)
-            message = 'Sent test DM'
+                resp = api.tweet(tweet2, resp.id)
+                message = 'Tweeted reply ID %s' %resp.id
     else:
         print(tweet)
         print(tweet2)
