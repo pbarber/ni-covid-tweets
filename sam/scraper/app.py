@@ -449,6 +449,43 @@ def check_clusters(secret, s3, notweet):
 
     return message
 
+def check_for_bulletin_files(s3, bucketname, previous):
+    # Attempt to pull the list of cluster publications
+    session = requests.Session()
+    url = 'https://www.publichealth.hscni.net/publications/coronavirus-bulletin'
+    pdfs = extract_doh_file_list(get_url(session, url,'text'), 1, r'files\/(\d{4}-\d{2})\/.+\.pdf$', datefmt='%Y-%m', element='span', htmlclass='file--application-pdf')
+    # Give proper dates to the files to prevent clashes (day is missing)
+    for i in range(len(pdfs)):
+        pdfs[i]['filedate'] = pdfs[i]['modified'][:10]
+    # Check whether we have new files
+    index, changes = check_file_list_against_previous(pdfs, previous)
+    # Upload the changed files to s3
+    index = upload_changes_to_s3(s3, bucketname, 'PHA-bulletin', index, changes, 'pdf')
+    return index, changes
+
+def check_bulletins(secret, s3, notweet):
+    indexkey = secret['pha-bulletin-index']
+    previous, index = get_and_sort_index(secret['bucketname'], indexkey, s3, 'filedate')
+
+    # Check the PHA page for new/updated PDFs
+    current, changes = check_for_bulletin_files(s3, secret['bucketname'], previous)
+
+    # Write any changes back to S3
+    if len(changes) > 0:
+        index.put_dict(current)
+        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
+
+        # If the most recent file has changed then tweet
+        totweet = [c['index'] for c in changes if (c['change'] == 'added') or (c['index'] == 0)]
+        if not notweet and (0 in totweet):
+            print('Launching generic tweeter for bulletins')
+            launch_lambda_async(os.getenv('GENERIC_TWEETER_LAMBDA'),[dict(current[a],type='PHA bulletin',tweet=False) for a in totweet])
+            message += ', and launched generic tweet lambda'
+    else:
+        message = 'Did nothing'
+
+    return message
+
 def get_all_doh(secret, s3):
     indexkey = secret['doh-dd-index']
 
@@ -507,6 +544,10 @@ def lambda_handler(event, context):
             messages.append(check_clusters(secret, s3, event.get('clusters-notweet', False)))
         except:
             logging.exception('Caught exception accessing PHA clusters data')
+        try:
+            messages.append(check_bulletins(secret, s3, event.get('bulletin-notweet', False)))
+        except:
+            logging.exception('Caught exception accessing PHA bulletin data')
 
     return {
         "statusCode": 200,
