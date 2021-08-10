@@ -3,7 +3,7 @@ import datetime
 import re
 import os
 import logging
-import hashlib
+from copy import deepcopy
 
 import requests
 from bs4 import BeautifulSoup
@@ -151,7 +151,7 @@ def check_doh(secret, s3, notweet, mode):
 
     return message
 
-def check_hscni(previous):
+def check_hscni(original):
     session = requests.Session()
 
     # Get the COVID-19 site homepage
@@ -194,6 +194,7 @@ def check_hscni(previous):
     data['Source'] = 'HSCNI'
 
     # Do change detection
+    previous = deepcopy(original)
     change = False
     if len(previous) > 0:
         if (data['Last Updated'] != previous[0]['Last Updated']):
@@ -214,13 +215,14 @@ def check_hscni(previous):
 
     return previous, change
 
-def check_phe(previous):
+def check_phe(original):
     session = requests.Session()
 
     # Get the PHE data from the API
     url = 'https://api.coronavirus.data.gov.uk/v2/data?areaType=nation&areaCode=N92000002&metric=cumPeopleVaccinatedFirstDoseByPublishDate&metric=cumPeopleVaccinatedSecondDoseByPublishDate&format=json'
     ordered = sorted(get_url(session, url,'json').get('body',[]), key=lambda k: k['date'], reverse=True)
 
+    previous = deepcopy(original)
     change = False
     if (len(ordered) > 1):
         data = {
@@ -261,47 +263,47 @@ def check_symptoms():
     }
     print('POST %s to %s' %(formdata,url))
 
-def check_vaccine(bucketname, pheindexkey, hscniindexkey, s3, notweet):
-    phe, pheindex = get_and_sort_index(bucketname, pheindexkey, s3)
-    hsc, hscindex = get_and_sort_index(bucketname, hscniindexkey, s3)
+def check_vaccine(bucketname, indexkey, s3, notweet):
+    index, indexobj = get_and_sort_index(bucketname, indexkey, s3)
 
+    # Check both the PHE API and HSCNI site
     phechange = False
     hscchange = False
     try:
-        phe, phechange = check_phe(phe)
+        phe, phechange = check_phe(index)
     except:
         logging.exception('Caught exception accessing PHE vaccine data')
     try:
-        hsc, hscchange = check_hscni(hsc)
+        hsc, hscchange = check_hscni(index)
     except:
         logging.exception('Caught exception accessing HSCNI vaccine data')
 
-    # Update the S3 indexes if there was a change
-    if phechange:
-        pheindex.put_dict(phe)
-    if hscchange:
-        hscindex.put_dict(hsc)
-
-    # If there has been a change, then tweet
-    change = False
+    # Choose which data to tweet
+    chosen = None
     if hscchange and phechange and (phe[0]['Last Updated'] == hsc[0]['Last Updated']):
         print('vaccines: both changed')
-        chosen = phe[0]
-        change = True
-    elif hscchange and ((len(phe) == 0) or (hsc[0]['Last Updated'] > phe[0]['Last Updated'])):
-        print('vaccines: HSC changed')
-        chosen = hsc[0]
-        change = True
-    elif phechange and ((len(hsc) == 0) or (phe[0]['Last Updated'] > hsc[0]['Last Updated'])):
-        print('vaccines: PHE changed')
-        chosen = phe[0]
-        change = True
+        if phe[0]['Total Doses'] < hsc[0]['Total Doses']:
+            chosen = hsc[0]
+        else:
+            chosen = phe[0]
+    elif hscchange and ((len(index) == 0) or (hsc[0]['Last Updated'] >= index[0]['Last Updated'])):
+        if index[0]['Total Doses'] < hsc[0]['Total Doses']:
+            chosen = hsc[0]
+    elif phechange and ((len(index) == 0) or (phe[0]['Last Updated'] >= index[0]['Last Updated'])):
+        if index[0]['Total Doses'] < phe[0]['Total Doses']:
+            chosen = phe[0]
 
+    # If there has been a change, then tweet
     message = 'Did nothing'
-    if change is True:
+    if chosen is not None:
         message = 'New last updated date of %s from %s' %(chosen['Last Updated'],chosen['Source'])
         print(chosen)
         if not notweet:
+            # Update the S3 indexes
+            if chosen['Source']=='HSCNI':
+                indexobj.put_dict(hsc)
+            else:
+                indexobj.put_dict(phe)
             print('Launching vaccine tweeter')
             launch_lambda_async(os.getenv('VACCINE_TWEETER_LAMBDA'),chosen)
             message += ', and launched vaccine tweet lambda'
@@ -529,7 +531,7 @@ def lambda_handler(event, context):
         except:
             logging.exception('Caught exception accessing DOH R number')
         try:
-            messages.append(check_vaccine(secret['bucketname'], secret['phe-vacc-index'], secret['hscni-vacc-index'], s3, event.get('vacc-notweet', False)))
+            messages.append(check_vaccine(secret['bucketname'], secret['shared-vacc-index'], s3, event.get('vaccine-notweet', False)))
         except:
             logging.exception('Caught exception accessing vaccine data')
         try:
