@@ -23,10 +23,7 @@ def lambda_handler(event, context):
 
     # Get the previous data file list from S3
     s3 = boto3.client('s3')
-    if event['Source']=='PHE':
-        keyname = secret['phe-vacc-index']
-    else:
-        keyname = secret['hscni-vacc-index']
+    keyname = secret['shared-vacc-index']
     status = S3_scraper_index(s3, secret['bucketname'], keyname)
     index = status.get_dict()
 
