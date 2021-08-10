@@ -39,7 +39,7 @@ def lambda_handler(event, context):
 \u2022 {total_f:,} first
 \u2022 {total_s:,} second
 
-Population (16 and over) vaccinated:
+Population (16 and over) vaccinated
 \u2022 {pop_f}% first
 \u2022 {pop_s}% second
 
