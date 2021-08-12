@@ -78,7 +78,7 @@ def lambda_handler(event, context):
         lin_pc_by_week = pandas.DataFrame(lin_pc_by_week).reset_index()
         lineage = df.groupby('lineage').size().reset_index(name='count')
         stream = io.BytesIO()
-        lineage.to_csv(stream, index=False)
+        lin_by_week.to_csv(stream, index=False)
         stream.seek(0)
         lineage_key = '%s_lineage.csv' % keyname.rsplit('.',maxsplit=1)[0]
         s3.upload_fileobj(stream, secret['bucketname'], lineage_key)
