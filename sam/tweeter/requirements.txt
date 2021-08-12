@@ -5,3 +5,5 @@ altair_saver
 selenium
 openpyxl
 tweepy
+requests
+bs4

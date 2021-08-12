@@ -48,6 +48,22 @@ Resources:
       DockerTag: tweeter-tag
       DockerContext: ./
       Dockerfile: tweeter/Dockerfile
+  NICOVIDVaccinesTweeter:
+    Type: AWS::Serverless::Function
+    Properties:
+      PackageType: Image
+      MemorySize: 2048
+      Timeout: 600
+      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
+      EventInvokeConfig:
+        MaximumRetryAttempts: 0
+      ImageConfig:
+        Command:
+          - "vaccines_tweeter.lambda_handler"
+    Metadata:
+      DockerTag: tweeter-tag
+      DockerContext: ./
+      Dockerfile: tweeter/Dockerfile
   NICOVIDVaccineTweeter:
     Type: AWS::Serverless::Function
     Properties:
