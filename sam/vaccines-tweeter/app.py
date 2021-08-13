@@ -163,7 +163,7 @@ One block is one person in 20
 )
     plots = []
     today = datetime.datetime.now().date()
-    if today.weekday() == 4: # Friday - scrape and plot vaccinations per person by postcode district
+    if today.weekday() == 5: # Saturday - scrape and plot vaccinations per person by postcode district
         driver = get_chrome_driver()
         if driver is None:
             logging.error('Failed to start chrome')
