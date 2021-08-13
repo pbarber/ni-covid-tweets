@@ -243,6 +243,15 @@ One block is one person in 20
                 stream.seek(0)
                 upload_key = '%s/%s/postcodes.csv' % (event['Last Updated'],keyname.rsplit('/',maxsplit=1)[0])
                 s3.upload_fileobj(stream, secret['bucketname'], upload_key)
+                # Calculate the NI vaccinations per person
+                df['colour'] = 'A'
+                df = df.append(
+                    {
+                        'Postcode District': 'NI',
+                        'Vaccinations per Person': df['Vaccinations'].sum() / df['Population'].sum(),
+                        'Vaccinations per Person over 20': df['Vaccinations'].sum() / df['Population over 20'].sum(),
+                        'colour': 'B'
+                    }, ignore_index=True)
                 # Create the row chart
                 p = altair.vconcat(
                     altair.Chart(
@@ -250,7 +259,7 @@ One block is one person in 20
                     ).mark_bar().encode(
                         x = altair.X('Vaccinations per Person:Q'),
                         y = altair.Y('Postcode District:O', sort='-x'),
-                        color = altair.Color('Council Area:N'),
+                        color = altair.Color('colour:N', legend=None),
                     ).properties(
                         height=1000,
                         width=450,
@@ -259,6 +268,7 @@ One block is one person in 20
                 ).properties(
                     title=altair.TitleParams(
                         ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
+                        'Overall NI value is highlighted',
                         'https://twitter.com/ni_covid19_data on %s'  %today.strftime('%A %-d %B %Y')],
                         baseline='bottom',
                         orient='bottom',
