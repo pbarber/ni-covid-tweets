@@ -29,7 +29,7 @@ Resources:
       Environment:
         Variables:
           TWEETER_LAMBDA: !Sub ${NICOVIDCasesTweeter.Arn}
-          VACCINE_TWEETER_LAMBDA: !Sub ${NICOVIDVaccineTweeter.Arn}
+          VACCINE_TWEETER_LAMBDA: !Sub ${NICOVIDVaccinesTweeter.Arn}
           R_TWEETER_LAMBDA: !Sub ${NICOVIDRTweeter.Arn}
           NISRA_TWEETER_LAMBDA: !Sub ${NICOVIDNISRATweeter.Arn}
           GENERIC_TWEETER_LAMBDA: !Sub ${NICOVIDGenericTweeter.Arn}
@@ -64,16 +64,6 @@ Resources:
       DockerTag: tweeter-tag
       DockerContext: ./
       Dockerfile: tweeter/Dockerfile
-  NICOVIDVaccineTweeter:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: vaccine-tweeter/
-      Handler: app.lambda_handler
-      Runtime: python3.8
-      Timeout: 120
-      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
-      EventInvokeConfig:
-        MaximumRetryAttempts: 0
   NICOVIDRTweeter:
     Type: AWS::Serverless::Function
     Properties:
