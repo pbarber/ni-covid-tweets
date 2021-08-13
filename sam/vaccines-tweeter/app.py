@@ -273,36 +273,6 @@ One block is one person in 20
                 p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
                 plotstore.seek(0)
                 plots.append({'name': plotname, 'store': plotstore})
-                p = altair.vconcat(
-                    altair.Chart(
-                        df
-                    ).mark_bar().encode(
-                        x = altair.X('Vaccinations per Person over 20:Q'),
-                        y = altair.Y('Postcode District:O', sort='-x'),
-                        color = altair.Color('Council Area:N'),
-                    ).properties(
-                        height=1000,
-                        width=450,
-                        title='NI COVID-19 Vaccinations per Person over 20 by Postcode District up until %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
-                    ),
-                ).properties(
-                    title=altair.TitleParams(
-                        ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
-                        'Note some postcodes are missing due to NISRA redactions',
-                        'https://twitter.com/ni_covid19_data on %s'  %today.strftime('%A %-d %B %Y')],
-                        baseline='bottom',
-                        orient='bottom',
-                        anchor='end',
-                        fontWeight='normal',
-                        fontSize=10,
-                        dy=10
-                    ),
-                )
-                plotname = 'vacc-postcodes-over20-%s.png'%today.strftime('%Y-%d-%m')
-                plotstore = io.BytesIO()
-                p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
-                plotstore.seek(0)
-                plots.append({'name': plotname, 'store': plotstore})
             except:
                 logging.exception('Caught exception in scraping/plotting')
 
