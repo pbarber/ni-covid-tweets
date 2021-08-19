@@ -163,7 +163,7 @@ One block is one person in 20
 )
     plots = []
     today = datetime.datetime.now().date()
-    if today.weekday() == 5: # Saturday - scrape and plot vaccinations per person by postcode district
+    if today.weekday() == 3: # Saturday - scrape and plot vaccinations per person by postcode district
         driver = get_chrome_driver()
         if driver is None:
             logging.error('Failed to start chrome')
@@ -237,6 +237,7 @@ One block is one person in 20
                 df = df.merge(nisra_pops, how='left', right_on='Postcode District', left_on='Postcode District', validate='1:1')
                 df['Vaccinations per Person'] = df['Vaccinations'] / df['Population']
                 df['Vaccinations per Person over 20'] = df['Vaccinations'] / df['Population over 20']
+                df['Potential vaccinations'] = (df['Population over 20'] * 2) - df['Vaccinations']
                 # Push the data calculated to s3
                 stream = io.BytesIO()
                 df.to_csv(stream, index=False)
@@ -250,9 +251,10 @@ One block is one person in 20
                         'Postcode District': 'NI',
                         'Vaccinations per Person': df['Vaccinations'].sum() / df['Population'].sum(),
                         'Vaccinations per Person over 20': df['Vaccinations'].sum() / df['Population over 20'].sum(),
+                        'Potential vaccinations': df['Potential vaccinations'].mean(),
                         'colour': 'B'
                     }, ignore_index=True)
-                # Create the row chart
+                # Create the row chart for vaccinations per person
                 p = altair.vconcat(
                     altair.Chart(
                         df
@@ -263,7 +265,7 @@ One block is one person in 20
                     ).properties(
                         height=1000,
                         width=450,
-                        title='NI COVID-19 Vaccinations per Person by Postcode District up until %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
+                        title='NI COVID-19 Vaccinations per Person by Postcode District up to %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
                     ),
                 ).properties(
                     title=altair.TitleParams(
@@ -279,6 +281,37 @@ One block is one person in 20
                     ),
                 )
                 plotname = 'vacc-postcodes-%s.png'%today.strftime('%Y-%d-%m')
+                plotstore = io.BytesIO()
+                p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+                plotstore.seek(0)
+                plots.append({'name': plotname, 'store': plotstore})
+                # Create the row chart for vaccinations not taken up
+                p = altair.vconcat(
+                    altair.Chart(
+                        df[(df['Potential vaccinations'] > 0) & (df['Postcode District'] != 'NI')]
+                    ).mark_bar().encode(
+                        x = altair.X('Potential vaccinations:Q'),
+                        y = altair.Y('Postcode District:O', sort='-x'),
+                        color = altair.Color('colour:N', legend=None),
+                    ).properties(
+                        height=1000,
+                        width=450,
+                        title='Potential NI COVID-19 Vaccinations by Postcode District up to %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
+                    ),
+                ).properties(
+                    title=altair.TitleParams(
+                        ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
+                        'Potential vaccinations metric is based on number of adults 20 and over',
+                        'https://twitter.com/ni_covid19_data on %s'  %today.strftime('%A %-d %B %Y')],
+                        baseline='bottom',
+                        orient='bottom',
+                        anchor='end',
+                        fontWeight='normal',
+                        fontSize=10,
+                        dy=10
+                    ),
+                )
+                plotname = 'vacc-postcodes-not-given-%s.png'%today.strftime('%Y-%d-%m')
                 plotstore = io.BytesIO()
                 p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
                 plotstore.seek(0)
