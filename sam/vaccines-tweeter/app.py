@@ -93,6 +93,149 @@ nisra_pops = pandas.DataFrame({
     ],
 })
 
+def make_postcode_plots(driver, plots, s3):
+    # Navigate to page 6 of the report
+    for _ in range(2,7):
+        WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".pbi-glyph-chevronrightmedium")))
+        time.sleep(3.0 + 3*(random.random()))
+        driver.find_element_by_css_selector(".pbi-glyph-chevronrightmedium").click()
+    # Right click on the bubble chart
+    WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CLASS_NAME, "mapBubbles")))
+    webdriver.ActionChains(driver).context_click(driver.find_element_by_class_name("mapBubbles")).perform()
+    # Click show as table
+    WebDriverWait(driver, 20).until(EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'Show as a table')]")))
+    driver.find_element_by_xpath("//*[contains(text(), 'Show as a table')]").click()
+    # Click on the table
+    WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".pivotTable .innerContainer .bodyCells div div div .pivotTableCellWrap")))
+    toprow = driver.find_element_by_css_selector(".pivotTable .innerContainer .bodyCells div div div .pivotTableCellWrap")
+    toprow.click()
+    table = driver.find_element_by_css_selector(".pivotTable")
+    items = [
+        my_elem.text for my_elem in WebDriverWait(
+            driver, 20).until(
+                EC.visibility_of_all_elements_located((
+                    By.CSS_SELECTOR,
+                    ".pivotTable .innerContainer .rowHeaders div div .pivotTableCellWrap, .pivotTable .innerContainer .bodyCells div div div .pivotTableCellWrap"
+                ))
+            )
+        ]
+    headers = [item for item in items if item.startswith('BT')]
+    cells = [item for item in items if not item.startswith('BT')]
+    # Scroll down the table
+    for i in range(len(headers)-2):
+        table.send_keys(Keys.DOWN)
+    headers_new = [None]
+    cells_new = []
+    # Last scroll before bounce back should stay in the same place
+    while headers_new[-1] not in headers:
+        if headers_new[-1] is not None:
+            headers.append(headers_new[-1])
+            cells.extend(get_new_items(cells, cells_new))
+        table.send_keys(Keys.DOWN)
+        items = [
+            my_elem.text for my_elem in WebDriverWait(
+                driver, 20).until(
+                    EC.visibility_of_all_elements_located((
+                        By.CSS_SELECTOR,
+                        ".pivotTable .innerContainer .rowHeaders div div .pivotTableCellWrap, .pivotTable .innerContainer .bodyCells div div div .pivotTableCellWrap"
+                    ))
+                )
+            ]
+        headers_new = [item for item in items if item.startswith('BT')]
+        cells_new = [item for item in items if not item.startswith('BT')]
+        # Table bounces back to the top if you scroll too many times
+        if (headers[0] == headers_new[0]):
+            logging.warning('Found first element so stopping')
+            break
+    # Build/clean the data frame for plotting
+    df = pandas.DataFrame({'Postcode District': headers, 'Vaccinations': cells})
+    df['Vaccinations'] = df['Vaccinations'].str.replace(',','').astype(int)
+    df['Postcode District'] = df['Postcode District'].str.replace('BT0','BT')
+    df = df.groupby('Postcode District').sum().reset_index()
+    df = df.merge(nisra_pops, how='left', right_on='Postcode District', left_on='Postcode District', validate='1:1')
+    df['Vaccinations per Person'] = df['Vaccinations'] / df['Population']
+    df['Vaccinations per Person over 20'] = df['Vaccinations'] / df['Population over 20']
+    df['Potential vaccinations'] = (df['Population over 20'] * 2) - df['Vaccinations']
+    # Push the data calculated to s3
+    stream = io.BytesIO()
+    df.to_csv(stream, index=False)
+    stream.seek(0)
+    upload_key = '%s/%s/postcodes.csv' % (event['Last Updated'],keyname.rsplit('/',maxsplit=1)[0])
+    s3.upload_fileobj(stream, secret['bucketname'], upload_key)
+    # Calculate the NI vaccinations per person
+    df['colour'] = 'A'
+    df = df.append(
+        {
+            'Postcode District': 'NI',
+            'Vaccinations per Person': df['Vaccinations'].sum() / df['Population'].sum(),
+            'Vaccinations per Person over 20': df['Vaccinations'].sum() / df['Population over 20'].sum(),
+            'Potential vaccinations': df['Potential vaccinations'].mean(),
+            'colour': 'B'
+        }, ignore_index=True)
+    # Create the row chart for vaccinations per person
+    p = altair.vconcat(
+        altair.Chart(
+            df
+        ).mark_bar().encode(
+            x = altair.X('Vaccinations per Person:Q'),
+            y = altair.Y('Postcode District:O', sort='-x'),
+            color = altair.Color('colour:N', legend=None),
+        ).properties(
+            height=1000,
+            width=450,
+            title='NI COVID-19 Vaccinations per Person by Postcode District up to %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
+        ),
+    ).properties(
+        title=altair.TitleParams(
+            ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
+            'Overall NI value is highlighted',
+            'https://twitter.com/ni_covid19_data on %s'  %today.strftime('%A %-d %B %Y')],
+            baseline='bottom',
+            orient='bottom',
+            anchor='end',
+            fontWeight='normal',
+            fontSize=10,
+            dy=10
+        ),
+    )
+    plotname = 'vacc-postcodes-%s.png'%today.strftime('%Y-%d-%m')
+    plotstore = io.BytesIO()
+    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+    plotstore.seek(0)
+    plots.append({'name': plotname, 'store': plotstore})
+    # Create the row chart for vaccinations not taken up
+    p = altair.vconcat(
+        altair.Chart(
+            df[(df['Potential vaccinations'] > 0) & (df['Postcode District'] != 'NI')]
+        ).mark_bar().encode(
+            x = altair.X('Potential vaccinations:Q'),
+            y = altair.Y('Postcode District:O', sort='-x'),
+            color = altair.Color('colour:N', legend=None),
+        ).properties(
+            height=1000,
+            width=450,
+            title='Potential NI COVID-19 Vaccinations by Postcode District up to %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
+        ),
+    ).properties(
+        title=altair.TitleParams(
+            ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
+            'Potential vaccinations metric is based on number of adults 20 and over',
+            'https://twitter.com/ni_covid19_data on %s'  %today.strftime('%A %-d %B %Y')],
+            baseline='bottom',
+            orient='bottom',
+            anchor='end',
+            fontWeight='normal',
+            fontSize=10,
+            dy=10
+        ),
+    )
+    plotname = 'vacc-postcodes-not-given-%s.png'%today.strftime('%Y-%d-%m')
+    plotstore = io.BytesIO()
+    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+    plotstore.seek(0)
+    plots.append({'name': plotname, 'store': plotstore})
+    return plots
+
 def lambda_handler(event, context):
     # Get the secret
     sm = boto3.client('secretsmanager')
@@ -163,7 +306,7 @@ One block is one person in 20
 )
     plots = []
     today = datetime.datetime.now().date()
-    if today.weekday() == 3: # Saturday - scrape and plot vaccinations per person by postcode district
+    if today.weekday() in [3,5]:
         driver = get_chrome_driver()
         if driver is None:
             logging.error('Failed to start chrome')
@@ -176,146 +319,8 @@ One block is one person in 20
                 url = html.find('iframe')['src']
                 # Use selenium to get the PowerBI report
                 driver.get(url)
-                # Navigate to page 6 of the report
-                for _ in range(2,7):
-                    WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".pbi-glyph-chevronrightmedium")))
-                    time.sleep(3.0 + 3*(random.random()))
-                    driver.find_element_by_css_selector(".pbi-glyph-chevronrightmedium").click()
-                # Right click on the bubble chart
-                WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CLASS_NAME, "mapBubbles")))
-                webdriver.ActionChains(driver).context_click(driver.find_element_by_class_name("mapBubbles")).perform()
-                # Click show as table
-                WebDriverWait(driver, 20).until(EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'Show as a table')]")))
-                driver.find_element_by_xpath("//*[contains(text(), 'Show as a table')]").click()
-                # Click on the table
-                WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".pivotTable .innerContainer .bodyCells div div div .pivotTableCellWrap")))
-                toprow = driver.find_element_by_css_selector(".pivotTable .innerContainer .bodyCells div div div .pivotTableCellWrap")
-                toprow.click()
-                table = driver.find_element_by_css_selector(".pivotTable")
-                items = [
-                    my_elem.text for my_elem in WebDriverWait(
-                        driver, 20).until(
-                            EC.visibility_of_all_elements_located((
-                                By.CSS_SELECTOR,
-                                ".pivotTable .innerContainer .rowHeaders div div .pivotTableCellWrap, .pivotTable .innerContainer .bodyCells div div div .pivotTableCellWrap"
-                            ))
-                        )
-                    ]
-                headers = [item for item in items if item.startswith('BT')]
-                cells = [item for item in items if not item.startswith('BT')]
-                # Scroll down the table
-                for i in range(len(headers)-2):
-                    table.send_keys(Keys.DOWN)
-                headers_new = [None]
-                cells_new = []
-                # Last scroll before bounce back should stay in the same place
-                while headers_new[-1] not in headers:
-                    if headers_new[-1] is not None:
-                        headers.append(headers_new[-1])
-                        cells.extend(get_new_items(cells, cells_new))
-                    table.send_keys(Keys.DOWN)
-                    items = [
-                        my_elem.text for my_elem in WebDriverWait(
-                            driver, 20).until(
-                                EC.visibility_of_all_elements_located((
-                                    By.CSS_SELECTOR,
-                                    ".pivotTable .innerContainer .rowHeaders div div .pivotTableCellWrap, .pivotTable .innerContainer .bodyCells div div div .pivotTableCellWrap"
-                                ))
-                            )
-                        ]
-                    headers_new = [item for item in items if item.startswith('BT')]
-                    cells_new = [item for item in items if not item.startswith('BT')]
-                    # Table bounces back to the top if you scroll too many times
-                    if (headers[0] == headers_new[0]):
-                        logging.warning('Found first element so stopping')
-                        break
-                # Build/clean the data frame for plotting
-                df = pandas.DataFrame({'Postcode District': headers, 'Vaccinations': cells})
-                df['Vaccinations'] = df['Vaccinations'].str.replace(',','').astype(int)
-                df['Postcode District'] = df['Postcode District'].str.replace('BT0','BT')
-                df = df.groupby('Postcode District').sum().reset_index()
-                df = df.merge(nisra_pops, how='left', right_on='Postcode District', left_on='Postcode District', validate='1:1')
-                df['Vaccinations per Person'] = df['Vaccinations'] / df['Population']
-                df['Vaccinations per Person over 20'] = df['Vaccinations'] / df['Population over 20']
-                df['Potential vaccinations'] = (df['Population over 20'] * 2) - df['Vaccinations']
-                # Push the data calculated to s3
-                stream = io.BytesIO()
-                df.to_csv(stream, index=False)
-                stream.seek(0)
-                upload_key = '%s/%s/postcodes.csv' % (event['Last Updated'],keyname.rsplit('/',maxsplit=1)[0])
-                s3.upload_fileobj(stream, secret['bucketname'], upload_key)
-                # Calculate the NI vaccinations per person
-                df['colour'] = 'A'
-                df = df.append(
-                    {
-                        'Postcode District': 'NI',
-                        'Vaccinations per Person': df['Vaccinations'].sum() / df['Population'].sum(),
-                        'Vaccinations per Person over 20': df['Vaccinations'].sum() / df['Population over 20'].sum(),
-                        'Potential vaccinations': df['Potential vaccinations'].mean(),
-                        'colour': 'B'
-                    }, ignore_index=True)
-                # Create the row chart for vaccinations per person
-                p = altair.vconcat(
-                    altair.Chart(
-                        df
-                    ).mark_bar().encode(
-                        x = altair.X('Vaccinations per Person:Q'),
-                        y = altair.Y('Postcode District:O', sort='-x'),
-                        color = altair.Color('colour:N', legend=None),
-                    ).properties(
-                        height=1000,
-                        width=450,
-                        title='NI COVID-19 Vaccinations per Person by Postcode District up to %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
-                    ),
-                ).properties(
-                    title=altair.TitleParams(
-                        ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
-                        'Overall NI value is highlighted',
-                        'https://twitter.com/ni_covid19_data on %s'  %today.strftime('%A %-d %B %Y')],
-                        baseline='bottom',
-                        orient='bottom',
-                        anchor='end',
-                        fontWeight='normal',
-                        fontSize=10,
-                        dy=10
-                    ),
-                )
-                plotname = 'vacc-postcodes-%s.png'%today.strftime('%Y-%d-%m')
-                plotstore = io.BytesIO()
-                p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
-                plotstore.seek(0)
-                plots.append({'name': plotname, 'store': plotstore})
-                # Create the row chart for vaccinations not taken up
-                p = altair.vconcat(
-                    altair.Chart(
-                        df[(df['Potential vaccinations'] > 0) & (df['Postcode District'] != 'NI')]
-                    ).mark_bar().encode(
-                        x = altair.X('Potential vaccinations:Q'),
-                        y = altair.Y('Postcode District:O', sort='-x'),
-                        color = altair.Color('colour:N', legend=None),
-                    ).properties(
-                        height=1000,
-                        width=450,
-                        title='Potential NI COVID-19 Vaccinations by Postcode District up to %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
-                    ),
-                ).properties(
-                    title=altair.TitleParams(
-                        ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
-                        'Potential vaccinations metric is based on number of adults 20 and over',
-                        'https://twitter.com/ni_covid19_data on %s'  %today.strftime('%A %-d %B %Y')],
-                        baseline='bottom',
-                        orient='bottom',
-                        anchor='end',
-                        fontWeight='normal',
-                        fontSize=10,
-                        dy=10
-                    ),
-                )
-                plotname = 'vacc-postcodes-not-given-%s.png'%today.strftime('%Y-%d-%m')
-                plotstore = io.BytesIO()
-                p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
-                plotstore.seek(0)
-                plots.append({'name': plotname, 'store': plotstore})
+                if today.weekday() == 3:# Saturday - scrape and plot vaccinations per person by postcode district
+                    plots = make_postcode_plots(driver, plots, s3)
             except:
                 logging.exception('Caught exception in scraping/plotting')
 
