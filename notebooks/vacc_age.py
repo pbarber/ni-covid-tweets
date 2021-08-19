@@ -197,4 +197,16 @@ plt.save('ni-eng-vacc-age-3-%s.png'%datetime.datetime.now().date().strftime('%Y-
 plt
 
 
-# %%
+# %% [markdown]
+# # Highest potential for vaccination
+#
+# * BT34 - Newry (South Down)
+# * BT71 - Dungannon
+# * BT7 - South Belfast (Ormeau)
+# * BT9 - South Belfast (Malone)
+# * BT35 - Newry (South Armagh)
+# * BT66 - Craigavon (Derryadd)
+# * BT62 - Craigavon (Portadown)
+# * BT47 - Derry (Waterside)
+# * BT48 - Derry (Cityside)
+# * BT12 - West Belfast
