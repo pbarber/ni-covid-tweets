@@ -216,7 +216,7 @@ df = create_models(df, 'Nation', 'Rolling cases per 100k')
 df = create_models(df, 'Nation', 'newCasesBySpecimenDate')
 
 # %% Load NI regional data
-ni = pandas.read_excel('~/Downloads/doh-dd-230721.xlsx', sheet_name='Tests')
+ni = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-130821.xlsx', sheet_name='Tests')
 ni.rename(columns={'LGD2014NAME': 'Area', 'Date of Specimen': 'Date'}, inplace=True)
 ni['Area'] = ni['Area'].fillna('Missing Postcode')
 newind = pandas.date_range(start=ni['Date'].min(), end=ni['Date'].max())
@@ -228,27 +228,71 @@ ni = ni.merge(nipop, how='left', left_on='Area', right_on='Area', validate='m:1'
 ni['Rolling cases per 100k'] = 100000 * (ni['New cases 7-day rolling mean'] / ni['Population'])
 ni = create_models(ni, 'Area', 'Rolling cases per 100k')
 
-# %% Load NI admissions data
-admissions = pandas.read_excel('~/Downloads/doh-dd-230721.xlsx',engine='openpyxl',sheet_name='Admissions')
-admissions = admissions.groupby('Admission Date')['Number of Admissions'].sum().reset_index()
-admissions.set_index('Admission Date', inplace=True)
-newind = pandas.date_range(start=admissions.index.min(), end=admissions.index.max())
-admissions = admissions.reindex(newind)
-admissions.index.name = 'Admission Date'
-admissions.reset_index(inplace=True)
-admissions.fillna(0, inplace=True)
-admissions['Number of Admissions 7-day rolling mean'] = admissions['Number of Admissions'].rolling(7, center=True).mean()
+# %% Load NI admissions/discharges/deaths data
+def load_ni_time_series(url, sheet_name, date_col, series_col, model=False, model_group=None):
+    df = pandas.read_excel(url, engine='openpyxl', sheet_name=sheet_name)
+    df = df.groupby(date_col)[series_col].sum().reset_index()
+    df.set_index(date_col, inplace=True)
+    newind = pandas.date_range(start=df.index.min(), end=df.index.max())
+    df = df.reindex(newind)
+    df.index.name = date_col
+    df.reset_index(inplace=True)
+    df.fillna(0, inplace=True)
+    df['%s 7-day rolling mean' %series_col] = df[series_col].rolling(7, center=True).mean()
+    if model is True:
+        df = create_models(df, model_group, series_col)
+    return df
+url = 'https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-130821.xlsx'
+discharges = load_ni_time_series(url,'Discharges','Discharge Date','Number of Discharges')
+admissions = load_ni_time_series(url,'Admissions','Admission Date','Number of Admissions')
+deaths = load_ni_time_series(url,'Deaths','Date of Death','Number of Deaths')
+adm_dis = admissions.merge(discharges, how='inner', left_on='Admission Date', right_on='Discharge Date', validate='1:1')
+adm_dis.drop(columns=['Discharge Date'], inplace = True)
+adm_dis.rename(columns={'Admission Date': 'Date'}, inplace = True)
+adm_dis['Inpatients'] = adm_dis['Number of Admissions 7-day rolling mean'].cumsum() - adm_dis['Number of Discharges 7-day rolling mean'].cumsum()
+adm_dis_7d = adm_dis.rename(columns={'Number of Admissions 7-day rolling mean': 'Admissions','Number of Discharges 7-day rolling mean': 'Discharges'})[['Date','Admissions','Discharges']]
+adm_dis_7d = adm_dis_7d.melt(id_vars='Date')
 
-# %% LOad NI deaths data
-deaths = pandas.read_excel('~/Downloads/doh-dd-230721.xlsx',engine='openpyxl',sheet_name='Deaths')
-deaths = deaths.groupby('Date of Death')['Number of Deaths'].sum().reset_index()
-deaths.set_index('Date of Death', inplace=True)
-newind = pandas.date_range(start=deaths.index.min(), end=deaths.index.max())
-deaths = deaths.reindex(newind)
-deaths.index.name = 'Date of Death'
-deaths.reset_index(inplace=True)
-deaths.fillna(0, inplace=True)
-deaths['Number of Deaths 7-day rolling mean'] = deaths['Number of Deaths'].rolling(7, center=True).mean()
+# %%
+def plot_hospital_stats(adm_dis_7d, inpatients, start_date, scale='linear'):
+    return plot_points_average_and_trend(
+        [
+            {
+                'points': None,
+                'line': adm_dis_7d[(adm_dis_7d['Date'] > start_date)].set_index(['Date','variable'])['value'],
+                'colour': 'variable',
+                'date_col': 'Date',
+                'x_title': 'Date',
+                'y_title': 'Number of people',
+                'scale': scale
+            },
+            {
+                'points': None,
+                'line': inpatients[(inpatients['Date'] > start_date)].set_index(['Date'])['Inpatients'],
+                'colour': 'red',
+                'date_col': 'Date',
+                'x_title': 'Date',
+                'y_title': 'Inpatients',
+                'scale': scale
+            },
+        ],
+        '%s COVID-19 %s (7-day average, %s scale) reported on %s' %(
+            'NI',
+            'hospital admissions, discharges and inpatients',
+            scale,
+            datetime.datetime.today().strftime('%A %-d %B %Y'),
+        ),
+        [
+            'Hospital data from DoH daily data',
+            'Last two days likely to be revised upwards due to reporting delays',
+            'https://twitter.com/ni_covid19_data'
+        ]
+    )
+#plt = plot_hospital_stats(adm_dis_7d, adm_dis, '2021-05-09')
+#plt.save('ni-adm-dis-%s-%s.png'%('linear',datetime.datetime.now().date().strftime('%Y-%d-%m')))
+plt = plot_hospital_stats(adm_dis_7d, adm_dis, '2020-10-01')
+plt.save('ni-adm-dis-w2-%s-%s.png'%('linear',datetime.datetime.now().date().strftime('%Y-%d-%m')))
+
 
 # %%
 covid_timeline = pandas.DataFrame([
@@ -597,6 +641,7 @@ for scale in ['log','linear']:
         ),
         [
             'Cases data from PHE dashboard/API',
+            'Last two days likely to be revised upwards due to reporting delays',
             'https://twitter.com/ni_covid19_data'
         ]
     )
