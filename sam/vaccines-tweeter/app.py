@@ -433,7 +433,7 @@ def get_ni_postcode_data(driver, s3, bucketname, last_updated, s3_dir):
     _ = update_datastore(s3, bucketname, keyname, last_updated, df)
     return df
 
-def make_postcode_plots(driver, df, plots, today):
+def make_postcode_plots(driver, df, plots, today, last_updated):
     # Calculate the NI vaccinations per person
     df['colour'] = 'A'
     df = df.append(
@@ -455,7 +455,7 @@ def make_postcode_plots(driver, df, plots, today):
         ).properties(
             height=1000,
             width=450,
-            title='NI COVID-19 Vaccinations per Person by Postcode District up to %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
+            title='NI COVID-19 Vaccinations per Person by Postcode District up to %s' %datetime.datetime.strptime(last_updated,'%Y-%m-%d').strftime('%-d %B %Y')
         ),
     ).properties(
         title=altair.TitleParams(
@@ -593,11 +593,11 @@ One block is one person in 20
             driver.get(url)
             s3dir = keyname.rsplit('/',maxsplit=1)[0]
             ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir)
-            if today.weekday() == 5:# Saturday - Vaccinations per person by postcode district
+            if today.weekday() == 5: # Saturday - Vaccinations per person by postcode district
                 driver.get(url)
                 postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir)
-                plots = make_postcode_plots(driver, postcodes, plots, s3, today)
-            elif today.weekday() == 4:# Friday - NI/Eng age band comparison
+                plots = make_postcode_plots(driver, postcodes, plots, today, event['Last Updated'])
+            elif today.weekday() == 0: # Monday - NI/Eng age band comparison
                 plots = make_age_band_plots(driver, ni_age_bands, plots, today)
         except:
             logging.exception('Caught exception in scraping/plotting')
