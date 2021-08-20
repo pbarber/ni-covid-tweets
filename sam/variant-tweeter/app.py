@@ -56,6 +56,7 @@ def lambda_handler(event, context):
             {'WHO label': 'Delta', 'Pango lineage': 'AY.1'},
             {'WHO label': 'Delta', 'Pango lineage': 'AY.2'},
             {'WHO label': 'Delta', 'Pango lineage': 'AY.3'},
+            {'WHO label': 'Delta', 'Pango lineage': 'AY.3.1'},
             {'WHO label': 'Epsilon', 'Pango lineage': 'B.1.427'},
             {'WHO label': 'Zeta', 'Pango lineage': 'P.2'},
             {'WHO label': 'Eta', 'Pango lineage': 'B.1.525'},
