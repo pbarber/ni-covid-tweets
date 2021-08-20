@@ -29,7 +29,8 @@ green_block = '\u2705'
 white_block = '\u2b1c'
 black_block = '\u2b1b'
 
-age_bands = pandas.DataFrame([
+# List of NI/England age bands, with ordering for plotting
+all_age_bands = pandas.DataFrame([
     {'Order': 0, 'NI bands': ['Under 16', '16-17'], 'Band': 'Under 18', 'Ages': [i for i in range(18)], 'Eng bands': ['Under 18']},
     {'Order': 1, 'NI bands': ['18-29'], 'Band': '18-29', 'Ages': [i for i in range(18,30)], 'Eng bands': ['18-24','25-29']},
     {'Order': 2, 'NI bands': ['30-39'], 'Band': '30-39', 'Ages': [i for i in range(30,40)], 'Eng bands': ['30-34','35-39']},
@@ -40,9 +41,8 @@ age_bands = pandas.DataFrame([
     {'Order': 7, 'NI bands': ['80+'], 'Band': '80+', 'Ages': [i for i in range(80,91)], 'Eng bands': ['80+']},
 ])
 
-def get_vaccine_age_bands():
-    # List of NI age bands, with ordering for plotting
-    age_bands_ons = age_bands.explode('Ages').reset_index()
+def get_ni_population_age_bands():
+    age_bands_ons = all_age_bands.explode('Ages').reset_index()
 
     # Load the 2020 population data for NI and convert to the NI vaccine reporting bands
     ni_pop = get_ni_pop_pyramid()
@@ -51,6 +51,11 @@ def get_vaccine_age_bands():
     ni_pop = ni_pop.groupby(['Order','Band']).sum()['Population'].reset_index()
     ni_pop['% of total population'] = ni_pop['Population'] / ni_pop['Population'].sum()
 
+    return ni_pop
+
+def get_eng_population_age_bands():
+    age_bands_ons = all_age_bands.explode('Ages').reset_index()
+
     # Load the 2020 population data for England and convert to the NI vaccine reporting bands
     eng_pop = get_eng_pop_pyramid()
     eng_pop = eng_pop[eng_pop['Year']==2020].groupby('Age Band').sum()['Population'].astype(int).reset_index()
@@ -58,7 +63,7 @@ def get_vaccine_age_bands():
     eng_pop = eng_pop.groupby(['Order','Band']).sum()['Population'].reset_index()
     eng_pop['% of total population'] = eng_pop['Population'] / eng_pop['Population'].sum()
 
-    return ni_pop, eng_pop
+    return eng_pop
 
 def clean_eng_age_band_cols(x):
     if x[1].startswith('Unnamed'):
@@ -66,9 +71,21 @@ def clean_eng_age_band_cols(x):
     else:
         return x[0].rstrip('0123456789,') + '_' + x[1]
 
-def get_eng_age_band_data(eng_pop):
-    age_bands_eng = age_bands.explode('Eng bands').reset_index()
-    url = 'https://www.england.nhs.uk/statistics/wp-content/uploads/sites/2/2021/07/COVID-19-daily-announced-vaccinations-26-July-2021.xlsx'
+def get_eng_age_band_data():
+    pop = get_eng_population_age_bands()
+    age_bands = all_age_bands.explode('Eng bands').reset_index()
+    # Check the NHS England page and find the latest age band Excel (includes under 18s, unlike the PHE API)
+    session = requests.Session()
+    url = 'https://www.england.nhs.uk/statistics/statistical-work-areas/covid-19-vaccinations/'
+    html = BeautifulSoup(get_url(session, url, 'text'),features="html.parser")
+    url = None
+    for a in html.find_all("a"):
+        if a['href'].endswith('.xlsx'):
+            url = a['href']
+            break
+    if url is None:
+        raise Exception('Unable to find England data')
+    # Get the age band data, transform and aggregate
     eng = pandas.read_excel(url, sheet_name='Vaccinations by LTLA and Age ', header=[12,13])
     eng.dropna(axis='columns', how='all', inplace=True)
     eng.dropna(axis='index', how='all', inplace=True)
@@ -85,9 +102,10 @@ def get_eng_age_band_data(eng_pop):
     eng = eng.reset_index()
     eng['Total'] = eng['Total'].astype(int)
     eng = eng[eng['Dose']=='1st dose'][['Age Band', 'Total']]
-    eng = eng.merge(age_bands_eng, how='inner', left_on='Age Band', right_on='Eng bands', validate='1:1')
+    # Join to the population data and group by band
+    eng = eng.merge(age_bands, how='inner', left_on='Age Band', right_on='Eng bands', validate='1:1')
     eng = eng.groupby(['Band']).sum()['Total'].reset_index()
-    eng = eng.merge(eng_pop, how='inner', left_on='Band', right_on='Band', validate='1:1')
+    eng = eng.merge(pop, how='inner', left_on='Band', right_on='Band', validate='1:1')
     eng['Nation'] = 'England'
     return eng
 
@@ -97,7 +115,9 @@ def pbi_goto_page(driver, pagenum):
         time.sleep(3.0 + 3*(random.random()))
         driver.find_element_by_css_selector(".pbi-glyph-chevronrightmedium").click()
 
-def get_ni_age_band_data(driver, ni_pop):
+def get_ni_age_band_data(driver):
+    pop = get_ni_population_age_bands()
+    age_bands = all_age_bands.explode('NI bands').reset_index()
     # Navigate to page 4 of the report
     pbi_goto_page(driver, 4)
     # Extract the table content
@@ -122,21 +142,17 @@ def get_ni_age_band_data(driver, ni_pop):
         raise Exception('Unknown table format')
     ni = pandas.DataFrame({'Age Band': headers, 'Total': cells[len(headers):]})
     ni['Total'] = ni['Total'].str.replace(',','').astype(int)
-    age_bands_ni = age_bands.explode('NI bands').reset_index()
-    ni = ni.merge(age_bands_ni, how='inner', left_on='Age Band', right_on='NI bands', validate='1:1')
+    ni = ni.merge(age_bands, how='inner', left_on='Age Band', right_on='NI bands', validate='1:1')
     ni = ni.groupby(['Band']).sum()['Total'].reset_index()
     # Combine with the population data
-    ni = ni.merge(ni_pop, how='right', left_on='Band', right_on='Band', validate='1:1')
+    ni = ni.merge(pop, how='right', left_on='Band', right_on='Band', validate='1:1')
     ni = ni[['Band', 'Order', 'Total', 'Population', '% of total population']]
     ni['Nation'] = 'Northern Ireland'
     return ni
 
 def make_age_band_plots(driver, plots, s3, today, secret, last_updated, s3_dir):
-    ni_pop, eng_pop = get_vaccine_age_bands()
-    eng = get_eng_age_band_data(eng_pop)
-    ni = get_ni_age_band_data(driver, ni_pop)
-    print(ni)
-    print(eng)
+    eng = get_eng_age_band_data()
+    ni = get_ni_age_band_data(driver)
     df = pandas.concat([ni, eng])
     df['Percentage first doses'] = (df['Total']/df['Population']).clip(upper=1.0)
     df['First doses as % of total population'] = df['Percentage first doses'] * df['% of total population']
