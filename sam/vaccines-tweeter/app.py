@@ -29,8 +29,21 @@ green_block = '\u2705'
 white_block = '\u2b1c'
 black_block = '\u2b1b'
 
-# List of NI/England age bands, with ordering for plotting
-all_age_bands = pandas.DataFrame([
+# List of NI age bands, with ordering for plotting
+ni_age_bands_lookup = pandas.DataFrame([
+    {'Order': 0, 'NI band': 'Under 16', 'Ages': [i for i in range(16)]},
+    {'Order': 1, 'NI band': '16-17', 'Ages': [i for i in range(16,18)]},
+    {'Order': 2, 'NI band': '18-29', 'Ages': [i for i in range(18,30)]},
+    {'Order': 3, 'NI band': '30-39', 'Ages': [i for i in range(30,40)]},
+    {'Order': 4, 'NI band': '40-49', 'Ages': [i for i in range(40,50)]},
+    {'Order': 5, 'NI band': '50-59', 'Ages': [i for i in range(50,60)]},
+    {'Order': 6, 'NI band': '60-69', 'Ages': [i for i in range(60,70)]},
+    {'Order': 7, 'NI band': '70-79', 'Ages': [i for i in range(70,80)]},
+    {'Order': 8, 'NI band': '80+', 'Ages': [i for i in range(80,91)]},
+])
+
+# List of comparable age bands, with ordering for plotting
+all_age_bands_lookup = pandas.DataFrame([
     {'Order': 0, 'NI bands': ['Under 16', '16-17'], 'Band': 'Under 18', 'Ages': [i for i in range(18)], 'Eng bands': ['Under 18']},
     {'Order': 1, 'NI bands': ['18-29'], 'Band': '18-29', 'Ages': [i for i in range(18,30)], 'Eng bands': ['18-24','25-29']},
     {'Order': 2, 'NI bands': ['30-39'], 'Band': '30-39', 'Ages': [i for i in range(30,40)], 'Eng bands': ['30-34','35-39']},
@@ -41,8 +54,8 @@ all_age_bands = pandas.DataFrame([
     {'Order': 7, 'NI bands': ['80+'], 'Band': '80+', 'Ages': [i for i in range(80,91)], 'Eng bands': ['80+']},
 ])
 
-def get_ni_population_age_bands():
-    age_bands_ons = all_age_bands.explode('Ages').reset_index()
+def get_ni_comparable_population_age_bands():
+    age_bands_ons = all_age_bands_lookup.explode('Ages').reset_index()
 
     # Load the 2020 population data for NI and convert to the NI vaccine reporting bands
     ni_pop = get_ni_pop_pyramid()
@@ -53,8 +66,21 @@ def get_ni_population_age_bands():
 
     return ni_pop
 
+def get_ni_reported_population_age_bands():
+    age_bands_ons = ni_age_bands_lookup.explode('Ages').reset_index()
+
+    # Load the 2020 population data for NI and convert to the NI vaccine reporting bands
+    ni_pop = get_ni_pop_pyramid()
+    ni_pop = ni_pop[ni_pop['Year']==2020].groupby('Age Band').sum()['Population'].astype(int).reset_index()
+    ni_pop = ni_pop.merge(age_bands_ons, how='inner', left_on='Age Band', right_on='Ages', validate='1:1')
+    ni_pop = ni_pop.groupby(['Order','NI band']).sum()['Population'].reset_index()
+    ni_pop.rename(columns={'NI band': 'Band'}, inplace=True)
+    ni_pop['% of total population'] = ni_pop['Population'] / ni_pop['Population'].sum()
+
+    return ni_pop
+
 def get_eng_population_age_bands():
-    age_bands_ons = all_age_bands.explode('Ages').reset_index()
+    age_bands_ons = all_age_bands_lookup.explode('Ages').reset_index()
 
     # Load the 2020 population data for England and convert to the NI vaccine reporting bands
     eng_pop = get_eng_pop_pyramid()
@@ -73,7 +99,7 @@ def clean_eng_age_band_cols(x):
 
 def get_eng_age_band_data():
     pop = get_eng_population_age_bands()
-    age_bands = all_age_bands.explode('Eng bands').reset_index()
+    age_bands = all_age_bands_lookup.explode('Eng bands').reset_index()
     # Check the NHS England page and find the latest age band Excel (includes under 18s, unlike the PHE API)
     session = requests.Session()
     url = 'https://www.england.nhs.uk/statistics/statistical-work-areas/covid-19-vaccinations/'
@@ -115,9 +141,33 @@ def pbi_goto_page(driver, pagenum):
         time.sleep(3.0 + 3*(random.random()))
         driver.find_element_by_css_selector(".pbi-glyph-chevronrightmedium").click()
 
-def get_ni_age_band_data(driver):
-    pop = get_ni_population_age_bands()
-    age_bands = all_age_bands.explode('NI bands').reset_index()
+def update_datastore(s3, bucketname, keyname, last_updated, df):
+    # Pull current data from s3
+    try:
+        obj = s3.get_object(Bucket=bucketname,Key=keyname)['Body']
+    except s3.exceptions.NoSuchKey:
+        print("The object %s does not exist in bucket %s." %(keyname, bucketname))
+        datastore = pandas.DataFrame(columns=['Date'])
+    else:
+        stream = io.BytesIO(obj.read())
+        datastore = pandas.read_csv(stream)
+    # Clean out any data with matching dates
+    datastore = datastore[datastore['Date'] != last_updated]
+    # Append the new data
+    datastore = pandas.concat([datastore, df])
+    datastore['Date'] = datastore['Date'].fillna(last_updated)
+    datastore['Date'] = pandas.to_datetime(datastore['Date'])
+    # Push the data to s3
+    stream = io.BytesIO()
+    datastore.to_csv(stream, index=False)
+    stream.seek(0)
+    s3.upload_fileobj(stream, bucketname, keyname)
+    return datastore
+
+def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir):
+    pop = get_ni_comparable_population_age_bands()
+    pop_reported = get_ni_reported_population_age_bands()
+    age_bands = all_age_bands_lookup.explode('NI bands').reset_index()
     # Navigate to page 4 of the report
     pbi_goto_page(driver, 4)
     # Extract the table content
@@ -142,17 +192,27 @@ def get_ni_age_band_data(driver):
         raise Exception('Unknown table format')
     ni = pandas.DataFrame({'Age Band': headers, 'Total': cells[len(headers):]})
     ni['Total'] = ni['Total'].str.replace(',','').astype(int)
+    # Combine into age bands
     ni = ni.merge(age_bands, how='inner', left_on='Age Band', right_on='NI bands', validate='1:1')
+    ni_as_reported = ni.groupby(['Age Band']).sum()['Total'].reset_index()
+    ni_as_reported = ni_as_reported.merge(pop_reported, how='right', left_on='Age Band', right_on='Band', validate='1:1')
+    ni_as_reported = ni_as_reported[['Band', 'Order', 'Total', 'Population', '% of total population']]
+    # Update the s3 store
+    keyname = '%s/agebands.csv' % s3_dir
+    datastore = update_datastore(s3, bucketname, keyname, last_updated, ni_as_reported)
+    previous_date = datastore[datastore['Date'] < datastore['Date'].max()]['Date'].max()
+    previous = datastore[datastore['Date'] == previous_date][['Band', 'Total']].rename(columns={'Total':'Previous'})
+    if len(previous) > 0:
+        ni_as_reported = ni_as_reported.merge(previous, how='left', on='Band')
+    # Combine with the comparable population data
     ni = ni.groupby(['Band']).sum()['Total'].reset_index()
-    # Combine with the population data
-    ni = ni.merge(pop, how='right', left_on='Band', right_on='Band', validate='1:1')
+    ni = ni.merge(pop, how='right', on='Band', validate='1:1')
     ni = ni[['Band', 'Order', 'Total', 'Population', '% of total population']]
     ni['Nation'] = 'Northern Ireland'
-    return ni
+    return ni, ni_as_reported
 
-def make_age_band_plots(driver, plots, s3, today, secret, last_updated, s3_dir):
+def make_age_band_plots(driver, ni, plots, today):
     eng = get_eng_age_band_data()
-    ni = get_ni_age_band_data(driver)
     df = pandas.concat([ni, eng])
     df['Percentage first doses'] = (df['Total']/df['Population']).clip(upper=1.0)
     df['First doses as % of total population'] = df['Percentage first doses'] * df['% of total population']
@@ -169,7 +229,7 @@ def make_age_band_plots(driver, plots, s3, today, secret, last_updated, s3_dir):
             y=altair.Y('First doses as % of total population:Q', aggregate='sum', axis=altair.Axis(format='%', title='Population received first dose')),
             color=altair.Color('Nation', legend=None)
         ).properties(
-            width=300,
+            width=600,
             title=altair.TitleParams(
                 text='NI has vaccinated {pct_diff:.0%} {dir} of its population than England'.format(
                     pct_diff = abs(pct_diff),
@@ -243,7 +303,6 @@ def make_age_band_plots(driver, plots, s3, today, secret, last_updated, s3_dir):
     plots.append({'name': plotname, 'store': plotstore})
     return plots
 
-
 class GroupMatch:
     def __init__(self, left, right, len):
         self.left = left
@@ -309,7 +368,7 @@ ni_postcode_pops = pandas.DataFrame({
     ],
 })
 
-def make_postcode_plots(driver, plots, s3, today, secret, last_updated, s3_dir):
+def get_ni_postcode_data(driver, s3, bucketname, last_updated, s3_dir):
     # Navigate to page 6 of the report
     pbi_goto_page(driver, 6)
     # Right click on the bubble chart
@@ -369,12 +428,12 @@ def make_postcode_plots(driver, plots, s3, today, secret, last_updated, s3_dir):
     df['Vaccinations per Person'] = df['Vaccinations'] / df['Population']
     df['Vaccinations per Person over 20'] = df['Vaccinations'] / df['Population over 20']
     df['Potential vaccinations'] = (df['Population over 20'] * 2) - df['Vaccinations']
-    # Push the data calculated to s3
-    stream = io.BytesIO()
-    df.to_csv(stream, index=False)
-    stream.seek(0)
-    upload_key = '%s/%s/postcodes.csv' % (last_updated,s3_dir)
-    s3.upload_fileobj(stream, secret['bucketname'], upload_key)
+    # Update the s3 store
+    keyname = '%s/postcodes.csv' % s3_dir
+    _ = update_datastore(s3, bucketname, keyname, last_updated, df)
+    return df
+
+def make_postcode_plots(driver, df, plots, today):
     # Calculate the NI vaccinations per person
     df['colour'] = 'A'
     df = df.append(
@@ -519,25 +578,52 @@ One block is one person in 20
 )
     plots = []
     today = datetime.datetime.now().date()
-    if today.weekday() in [4,5]:
-        driver = get_chrome_driver()
-        if driver is None:
-            logging.error('Failed to start chrome')
-        else:
-            try:
-                session = requests.Session()
-                # Find the PowerBI URL from the HSCNI site
-                url = 'https://covid-19.hscni.net/ni-covid-19-vaccinations-dashboard/'
-                html = BeautifulSoup(get_url(session, url, 'text'),features="html.parser")
-                url = html.find('iframe')['src']
-                # Use selenium to get the PowerBI report
+    driver = get_chrome_driver()
+    ni_age_bands_reported = None
+    if driver is None:
+        logging.error('Failed to start chrome')
+    else:
+        try:
+            session = requests.Session()
+            # Find the PowerBI URL from the HSCNI site
+            url = 'https://covid-19.hscni.net/ni-covid-19-vaccinations-dashboard/'
+            html = BeautifulSoup(get_url(session, url, 'text'),features="html.parser")
+            url = html.find('iframe')['src']
+            # Use selenium to get the PowerBI report
+            driver.get(url)
+            s3dir = keyname.rsplit('/',maxsplit=1)[0]
+            ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir)
+            if today.weekday() == 5:# Saturday - Vaccinations per person by postcode district
                 driver.get(url)
-                if today.weekday() == 5:# Saturday - scrape and plot vaccinations per person by postcode district
-                    plots = make_postcode_plots(driver, plots, s3, today, secret, event['Last Updated'], keyname.rsplit('/',maxsplit=1)[0])
-                elif today.weekday() == 4:# Friday - NI/Eng age band comparison
-                    plots = make_age_band_plots(driver, plots, s3, today, secret, event['Last Updated'], keyname.rsplit('/',maxsplit=1)[0])
-            except:
-                logging.exception('Caught exception in scraping/plotting')
+                postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir)
+                plots = make_postcode_plots(driver, postcodes, plots, s3, today)
+            elif today.weekday() == 4:# Friday - NI/Eng age band comparison
+                plots = make_age_band_plots(driver, ni_age_bands, plots, today)
+        except:
+            logging.exception('Caught exception in scraping/plotting')
+    tweet3 = None
+    first = True
+    try:
+        if ni_age_bands_reported is not None:
+            tweet3 = 'NI COVID-19 first doses by age band\n\n'
+            for _,data in ni_age_bands_reported.to_dict('index').items():
+                fstring = '\u2022 {band}: {pct_done:.1%}'
+                if first:
+                    fstring += ' of total'
+                if 'Previous' in data:
+                    fstring += ', {new:,}'
+                    if first:
+                        fstring += ' new'
+                fstring += '\n'
+                if not pandas.isna(data['Total']):
+                    tweet3 += fstring.format(
+                        band=data['Band'],
+                        pct_done=data['Total']/data['Population'],
+                        new=int(data['Total']-data.get('Previous',0)),
+                    )
+                    first = False
+    except:
+        logging.exception('Caught error in age band tweet')
 
     if event.get('notweet') is not True:
         api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
@@ -551,6 +637,8 @@ One block is one person in 20
                 resp = api.dm(secret['twitter_dmaccount'], tweet2, upload_ids[1])
             else:
                 resp = api.dm(secret['twitter_dmaccount'], tweet2)
+            if tweet3 is not None:
+                resp = api.dm(secret['twitter_dmaccount'], tweet3)
             message = 'Sent test DM'
         else:
             if len(upload_ids) > 0:
@@ -566,9 +654,15 @@ One block is one person in 20
 
             resp = api.tweet(tweet2, resp.id)
             message = 'Tweeted reply ID %s' %resp.id
+
+            if tweet3 is not None:
+                resp = api.tweet(tweet3, resp.id)
+                message = 'Tweeted reply ID %s' %resp.id
     else:
         print(tweet)
         print(tweet2)
+        if tweet3 is not None:
+            print(tweet3)
         message = 'Did not tweet'
 
     return {
