@@ -20,6 +20,7 @@ import altair
 from shared import S3_scraper_index, get_url
 from twitter_shared import TwitterAPI
 from plot_shared import get_chrome_driver
+from data_shared import get_eng_pop_pyramid, get_ni_pop_pyramid
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -27,6 +28,202 @@ bad_symb = '\u2191'
 green_block = '\u2705'
 white_block = '\u2b1c'
 black_block = '\u2b1b'
+
+age_bands = pandas.DataFrame([
+    {'Order': 0, 'Band': 'Under 18', 'Ages': [i for i in range(18)], 'Eng bands': ['Under 18']},
+    {'Order': 1, 'Band': '18-29', 'Ages': [i for i in range(18,30)], 'Eng bands': ['18-24','25-29']},
+    {'Order': 2, 'Band': '30-39', 'Ages': [i for i in range(30,40)], 'Eng bands': ['30-34','35-39']},
+    {'Order': 3, 'Band': '40-49', 'Ages': [i for i in range(40,50)], 'Eng bands': ['40-44','45-49']},
+    {'Order': 4, 'Band': '50-59', 'Ages': [i for i in range(50,60)], 'Eng bands': ['50-54','55-59']},
+    {'Order': 5, 'Band': '60-69', 'Ages': [i for i in range(60,70)], 'Eng bands': ['60-64','65-69']},
+    {'Order': 6, 'Band': '70-79', 'Ages': [i for i in range(70,80)], 'Eng bands': ['70-74','75-79']},
+    {'Order': 7, 'Band': '80+', 'Ages': [i for i in range(80,91)], 'Eng bands': ['80+']},
+])
+
+def get_vaccine_age_bands():
+    # List of NI age bands, with ordering for plotting
+    age_bands_ons = age_bands.explode('Ages').reset_index()
+
+    # Load the 2020 population data for NI and convert to the NI vaccine reporting bands
+    ni_pop = get_ni_pop_pyramid()
+    ni_pop = ni_pop[ni_pop['Year']==2020].groupby('Age Band').sum()['Population'].astype(int).reset_index()
+    ni_pop = ni_pop.merge(age_bands_ons, how='inner', left_on='Age Band', right_on='Ages', validate='1:1')
+    ni_pop = ni_pop.groupby(['Order','Band']).sum()['Population'].reset_index()
+    ni_pop['% of total population'] = ni_pop['Population'] / ni_pop['Population'].sum()
+
+    # Load the 2020 population data for England and convert to the NI vaccine reporting bands
+    eng_pop = get_eng_pop_pyramid()
+    eng_pop = eng_pop[eng_pop['Year']==2020].groupby('Age Band').sum()['Population'].astype(int).reset_index()
+    eng_pop = eng_pop.merge(age_bands_ons, how='inner', left_on='Age Band', right_on='Ages', validate='1:1')
+    eng_pop = eng_pop.groupby(['Order','Band']).sum()['Population'].reset_index()
+    eng_pop['% of total population'] = eng_pop['Population'] / eng_pop['Population'].sum()
+
+    return ni_pop, eng_pop
+
+def clean_eng_age_band_cols(x):
+    if x[1].startswith('Unnamed'):
+        return x[0].rstrip('0123456789,')
+    else:
+        return x[0].rstrip('0123456789,') + '_' + x[1]
+
+def get_eng_age_band_data(eng_pop):
+    age_bands_eng = age_bands.explode('Eng bands').reset_index()
+    url = 'https://www.england.nhs.uk/statistics/wp-content/uploads/sites/2/2021/07/COVID-19-daily-announced-vaccinations-26-July-2021.xlsx'
+    eng = pandas.read_excel(url, sheet_name='Vaccinations by LTLA and Age ', header=[12,13])
+    eng.dropna(axis='columns', how='all', inplace=True)
+    eng.dropna(axis='index', how='all', inplace=True)
+    newcols = [clean_eng_age_band_cols(i) for i in eng.columns.values]
+    eng.columns = newcols
+    eng.dropna(axis='index', subset=['UTLA Name'], inplace=True)
+    eng = eng.drop(columns=['UTLA Code','UTLA Name','LTLA Code','LTLA Name','Total 1st Doses','Total 2nd Doses','Cumulative Total Doses (1st and 2nd doses) to Date'])
+    eng = eng.transpose().reset_index()
+    eng[['Dose','Age Band']] = eng['index'].str.split('_',1,expand=True)
+    eng.drop(columns=['index'],inplace=True)
+    eng = eng.set_index(['Dose','Age Band'])
+    eng = eng.fillna(0).sum(axis=1)
+    eng.name = 'Total'
+    eng = eng.reset_index()
+    eng['Total'] = eng['Total'].astype(int)
+    eng = eng[eng['Dose']=='1st dose'][['Age Band', 'Total']]
+    eng = eng.merge(age_bands_eng, how='inner', left_on='Age Band', right_on='Eng bands', validate='1:1')
+    eng = eng.groupby(['Band']).sum()['Total'].reset_index()
+    eng = eng.merge(eng_pop, how='inner', left_on='Band', right_on='Band', validate='1:1')
+    eng['Nation'] = 'England'
+    return eng
+
+def pbi_goto_page(driver, pagenum):
+    for _ in range(pagenum-1):
+        WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".pbi-glyph-chevronrightmedium")))
+        time.sleep(3.0 + 3*(random.random()))
+        driver.find_element_by_css_selector(".pbi-glyph-chevronrightmedium").click()
+
+def get_ni_age_band_data(driver, ni_pop):
+    # Navigate to page 4 of the report
+    pbi_goto_page(driver, 4)
+    # Extract the table content
+    items = [
+        my_elem.text for my_elem in WebDriverWait(
+            driver, 20).until(
+                EC.visibility_of_all_elements_located((
+                    By.CSS_SELECTOR,
+                    ".tableEx .innerContainer .bodyCells div div div .pivotTableCellWrap"
+                ))
+            )
+        ]
+    headers = [item for item in items if ('-' in item) or ('+' in item)]
+    cells = [item for item in items if ('-' not in item) and ('+' not in item) and ('%' not in item)]
+    if headers[-1] == '16-17':
+        headers.insert(0, headers[-1])
+        headers = headers[:-1]
+        cells.insert(0, cells[-2])
+        cells.insert(len(headers), cells[-1])
+        cells = cells[:-2]
+    elif (headers[0] != '16-17'):
+        raise Exception('Unknown table format')
+    ni = pandas.DataFrame({'Age Band': headers, 'Total': cells[len(headers):]})
+    ni['Total'] = ni['Total'].str.replace(',','').astype(int)
+    # Combine with the population data
+    ni = ni.merge(ni_pop, how='right', left_on='Age Band', right_on='Band', validate='1:1')
+    ni = ni[['Band', 'Order', 'Total', 'Population', '% of total population']]
+    ni['Nation'] = 'Northern Ireland'
+    return ni
+
+def make_age_band_plots(driver, plots, s3, today, secret, last_updated, s3_dir):
+    ni_pop, eng_pop = get_vaccine_age_bands()
+    eng = get_eng_age_band_data(eng_pop)
+    ni = get_ni_age_band_data(driver, ni_pop)
+    print(ni)
+    print(eng)
+    df = pandas.concat([ni, eng])
+    df['Percentage first doses'] = (df['Total']/df['Population']).clip(upper=1.0)
+    df['First doses as % of total population'] = df['Percentage first doses'] * df['% of total population']
+    ni_done = df[df['Nation']=='Northern Ireland']['First doses as % of total population'].sum()
+    eng_done = df[df['Nation']=='England']['First doses as % of total population'].sum()
+    pct_diff = ni_done - eng_done
+    p = altair.concat(
+        altair.Chart(df).mark_bar(
+            thickness=2,
+            width=25,
+            opacity=1
+        ).encode(
+            x=altair.X('Nation:O', axis=altair.Axis(labelAngle=0)),
+            y=altair.Y('First doses as % of total population:Q', aggregate='sum', axis=altair.Axis(format='%', title='Population received first dose')),
+            color=altair.Color('Nation', legend=None)
+        ).properties(
+            width=300,
+            title=altair.TitleParams(
+                text='NI has vaccinated {pct_diff:.0%} {dir} of its population than England'.format(
+                    pct_diff = abs(pct_diff),
+                    dir = 'more' if (pct_diff > 0) else 'less',
+                ),
+                subtitle=['NI has vaccinated {ni_done:.1%}, England {eng_done:.1%} for first doses'.format(
+                    ni_done=ni_done,
+                    eng_done=eng_done,
+                )],
+                align='left',
+                anchor='start',
+                fontSize=18,
+                subtitleFontSize=14
+            )
+        )
+    ).properties(
+        title=altair.TitleParams(
+            ['Population data for 2020 from ONS',
+            'Vaccination data from HSCNI and NHS England',
+            'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%d-%m')],
+            baseline='bottom',
+            orient='bottom',
+            anchor='end',
+            fontWeight='normal',
+            fontSize=10,
+            dy=10
+        ),
+    )
+    plotname = 'vacc-ni-eng-1-%s.png'%today.strftime('%Y-%d-%m')
+    plotstore = io.BytesIO()
+    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+    plotstore.seek(0)
+    plots.append({'name': plotname, 'store': plotstore})
+    p = altair.concat(
+        altair.Chart(df).mark_bar(
+            thickness=2,
+            width=25,
+            opacity=1
+        ).encode(
+            x=altair.X('Nation:O', axis=None),
+            y=altair.Y('Percentage first doses:Q', axis=altair.Axis(format='%', title='First doses completed')),
+            color='Nation',
+            column=altair.Column('Band:O', sort=altair.SortField('Order'), header=altair.Header(title='Age Band', labelOrient='bottom', titleOrient='bottom'), spacing=0)
+        ).properties(
+            width=50,
+            title=altair.TitleParams(
+                text='Difference between COVID-19 vaccine uptake for NI and England',
+                align='left',
+                anchor='start',
+                fontSize=18,
+                subtitleFontSize=15
+            )
+        )
+    ).properties(
+        title=altair.TitleParams(
+            ['Population data for 2020 from ONS',
+            'Vaccination data from HSCNI and NHS England',
+            'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%d-%m')],
+            baseline='bottom',
+            orient='bottom',
+            anchor='end',
+            fontWeight='normal',
+            fontSize=10,
+            dy=10
+        ),
+    )
+    plotname = 'vacc-ni-eng-2-%s.png'%today.strftime('%Y-%d-%m')
+    plotstore = io.BytesIO()
+    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+    plotstore.seek(0)
+    plots.append({'name': plotname, 'store': plotstore})
+    return plots
+
 
 class GroupMatch:
     def __init__(self, left, right, len):
@@ -78,7 +275,7 @@ def get_new_items(old,new):
         raise Exception('Old section match finished before end %d' %(found.len + found.left))
     return new[(found.right+found.len):]
 
-nisra_pops = pandas.DataFrame({
+ni_postcode_pops = pandas.DataFrame({
     'Postcode District': [
         'BT1','BT2','BT3','BT4','BT5','BT6','BT7','BT8','BT9','BT10','BT11','BT12','BT13','BT14','BT15','BT16','BT17','BT18','BT19','BT20','BT21','BT22','BT23','BT24','BT25','BT26','BT27','BT28','BT29','BT30','BT31','BT32','BT33','BT34','BT35','BT36','BT37','BT38','BT39','BT40','BT41','BT42','BT43','BT44','BT45','BT46','BT47','BT48','BT49','BT51','BT52','BT53','BT54','BT55','BT56','BT57','BT60','BT61','BT62','BT63','BT64','BT65','BT66','BT67','BT68','BT69','BT70','BT71','BT74','BT75','BT76','BT77','BT78','BT79','BT80','BT81','BT82','BT92','BT93','BT94',
     ],
@@ -93,12 +290,9 @@ nisra_pops = pandas.DataFrame({
     ],
 })
 
-def make_postcode_plots(driver, plots, s3):
+def make_postcode_plots(driver, plots, s3, today, secret, last_updated, s3_dir):
     # Navigate to page 6 of the report
-    for _ in range(2,7):
-        WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".pbi-glyph-chevronrightmedium")))
-        time.sleep(3.0 + 3*(random.random()))
-        driver.find_element_by_css_selector(".pbi-glyph-chevronrightmedium").click()
+    pbi_goto_page(driver, 6)
     # Right click on the bubble chart
     WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CLASS_NAME, "mapBubbles")))
     webdriver.ActionChains(driver).context_click(driver.find_element_by_class_name("mapBubbles")).perform()
@@ -152,7 +346,7 @@ def make_postcode_plots(driver, plots, s3):
     df['Vaccinations'] = df['Vaccinations'].str.replace(',','').astype(int)
     df['Postcode District'] = df['Postcode District'].str.replace('BT0','BT')
     df = df.groupby('Postcode District').sum().reset_index()
-    df = df.merge(nisra_pops, how='left', right_on='Postcode District', left_on='Postcode District', validate='1:1')
+    df = df.merge(ni_postcode_pops, how='left', right_on='Postcode District', left_on='Postcode District', validate='1:1')
     df['Vaccinations per Person'] = df['Vaccinations'] / df['Population']
     df['Vaccinations per Person over 20'] = df['Vaccinations'] / df['Population over 20']
     df['Potential vaccinations'] = (df['Population over 20'] * 2) - df['Vaccinations']
@@ -160,7 +354,7 @@ def make_postcode_plots(driver, plots, s3):
     stream = io.BytesIO()
     df.to_csv(stream, index=False)
     stream.seek(0)
-    upload_key = '%s/%s/postcodes.csv' % (event['Last Updated'],keyname.rsplit('/',maxsplit=1)[0])
+    upload_key = '%s/%s/postcodes.csv' % (last_updated,s3_dir)
     s3.upload_fileobj(stream, secret['bucketname'], upload_key)
     # Calculate the NI vaccinations per person
     df['colour'] = 'A'
@@ -306,7 +500,7 @@ One block is one person in 20
 )
     plots = []
     today = datetime.datetime.now().date()
-    if today.weekday() in [3,5]:
+    if today.weekday() in [4,5]:
         driver = get_chrome_driver()
         if driver is None:
             logging.error('Failed to start chrome')
@@ -319,8 +513,10 @@ One block is one person in 20
                 url = html.find('iframe')['src']
                 # Use selenium to get the PowerBI report
                 driver.get(url)
-                if today.weekday() == 3:# Saturday - scrape and plot vaccinations per person by postcode district
-                    plots = make_postcode_plots(driver, plots, s3)
+                if today.weekday() == 5:# Saturday - scrape and plot vaccinations per person by postcode district
+                    plots = make_postcode_plots(driver, plots, s3, today, secret, event['Last Updated'], keyname.rsplit('/',maxsplit=1)[0])
+                elif today.weekday() == 4:# Friday - NI/Eng age band comparison
+                    plots = make_age_band_plots(driver, plots, s3, today, secret, event['Last Updated'], keyname.rsplit('/',maxsplit=1)[0])
             except:
                 logging.exception('Caught exception in scraping/plotting')
 
