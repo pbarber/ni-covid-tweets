@@ -486,7 +486,7 @@ def make_postcode_plots(driver, df, plots, today, last_updated):
         ).properties(
             height=1000,
             width=450,
-            title='Potential NI COVID-19 Vaccinations by Postcode District up to %s' %datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%-d %B %Y')
+            title='Potential NI COVID-19 Vaccinations by Postcode District up to %s' %datetime.datetime.strptime(last_updated,'%Y-%m-%d').strftime('%-d %B %Y')
         ),
     ).properties(
         title=altair.TitleParams(
