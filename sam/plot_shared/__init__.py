@@ -1,5 +1,6 @@
 import logging
 import os
+import datetime
 
 from selenium import webdriver
 import altair
@@ -196,6 +197,7 @@ def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, s
         [
             'Dots show daily reports, line is 7-day rolling average',
             'Cases, admissions and deaths data from DoH daily data',
-            'https://twitter.com/ni_covid19_data'
+            'Last two days likely to be revised upwards due to reporting delays',
+            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
         ],
     )

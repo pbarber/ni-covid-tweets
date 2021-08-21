@@ -10,7 +10,7 @@ import numpy
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
-from plot_shared import get_chrome_driver, plot_key_ni_stats_date_range
+from plot_shared import get_chrome_driver, plot_key_ni_stats_date_range, plot_points_average_and_trend
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -57,6 +57,69 @@ def create_model(df, to_model, datekey):
     df['%s model_weekly_change' %to_model] = (fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 8) - fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)) / fit_exp(df['%s model0'%to_model], df['%s model1'%to_model], 1)
     return(df)
 
+def load_ni_time_series(url, sheet_name, date_col, series_col, model=False, filter_col=None, filter=None):
+    df = pandas.read_excel(url, engine='openpyxl', sheet_name=sheet_name)
+    if filter_col is not None:
+        df = df[df[filter_col] == filter]
+    df = df.groupby(date_col)[series_col].sum().reset_index()
+    df.set_index(date_col, inplace=True)
+    newind = pandas.date_range(start=df.index.min(), end=df.index.max())
+    df = df.reindex(newind)
+    df.index.name = date_col
+    df.reset_index(inplace=True)
+    df.fillna(0, inplace=True)
+    df['%s 7-day rolling mean' %series_col] = df[series_col].rolling(7, center=True).mean()
+    if model is True:
+        df = create_model(df, '%s 7-day rolling mean' %series_col, date_col)
+    return df
+
+def plot_hospital_stats(adm_dis_7d, inpatients, icu, start_date, scale='linear'):
+    return plot_points_average_and_trend(
+        [
+            {
+                'points': None,
+                'line': adm_dis_7d[(adm_dis_7d['Date'] > start_date)].set_index(['Date','variable'])['value'],
+                'colour': 'variable',
+                'date_col': 'Date',
+                'x_title': 'Date',
+                'y_title': 'Number of people (7-day average)',
+                'scale': scale,
+                'height': 225
+            },
+            {
+                'points': None,
+                'line': inpatients[(inpatients['Date'] > start_date)].set_index(['Date'])['Number of Confirmed COVID Inpatients'],
+                'colour': 'red',
+                'date_col': 'Date',
+                'x_title': 'Date',
+                'y_title': 'Inpatients (with confirmed COVID-19)',
+                'scale': scale,
+                'height': 225
+            },
+            {
+                'points': None,
+                'line': icu[(icu['Date'] > start_date)].set_index('Date')['Confirmed COVID Occupied'],
+                'colour': 'black',
+                'date_col': 'Date',
+                'x_title': 'Date',
+                'y_title': 'ICU Beds COVID Occupied',
+                'scale': scale,
+                'height': 225
+            },
+        ],
+        '%s COVID-19 %s (%s scale) reported on %s' %(
+            'NI',
+            'hospital admissions, discharges, inpatients and ICU',
+            scale,
+            datetime.datetime.today().strftime('%A %-d %B %Y'),
+        ),
+        [
+            'Hospital data from DoH daily data',
+            'Last two days may be revised upwards due to reporting delays',
+            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+        ]
+    )
+
 def lambda_handler(event, context):
     # Get the secret
     sm = boto3.client('secretsmanager')
@@ -96,9 +159,12 @@ def lambda_handler(event, context):
         last_but1_model = df.iloc[df[(df['Rolling cases per 100k model_daily_change'].notna()) & (df['Sample_Date'] != latest_model['Sample_Date'])]['Sample_Date'].idxmax()]
 
         # Summary stats to allow 'X registered in last 24 hours' info
-        deaths = pandas.read_excel(stream,engine='openpyxl',sheet_name='Deaths')
-        admissions = pandas.read_excel(stream,engine='openpyxl',sheet_name='Admissions')
-        discharges = pandas.read_excel(stream,engine='openpyxl',sheet_name='Discharges')
+        deaths = load_ni_time_series(stream,'Deaths','Date of Death','Number of Deaths')
+        admissions = load_ni_time_series(stream,'Admissions','Admission Date','Number of Admissions',True)
+        discharges = load_ni_time_series(stream,'Discharges','Discharge Date','Number of Discharges')
+        inpatients = load_ni_time_series(stream,'Inpatients','Inpatients at Midnight','Number of Confirmed COVID Inpatients',False,'Sex','All')
+        inpatients.rename(columns={'Inpatients at Midnight': 'Date'}, inplace=True)
+        icu = load_ni_time_series(stream,'ICU','Date','Confirmed COVID Occupied')
         totals = {
             'ind_tested': int(df['ALL INDIVIDUALS TESTED'].sum()),
             'ind_positive': int(df['INDIVIDUALS TESTED POSITIVE'].sum()),
@@ -107,24 +173,13 @@ def lambda_handler(event, context):
             'discharges': int(discharges['Number of Discharges'].sum())
         }
         print(totals)
-        admissions = admissions.groupby('Admission Date')['Number of Admissions'].sum().reset_index()
-        admissions.set_index('Admission Date', inplace=True)
-        newind = pandas.date_range(start=admissions.index.min(), end=admissions.index.max())
-        admissions = admissions.reindex(newind)
-        admissions.index.name = 'Admission Date'
-        admissions.reset_index(inplace=True)
-        admissions.fillna(0, inplace=True)
-        admissions['Number of Admissions 7-day rolling mean'] = admissions['Number of Admissions'].rolling(7, center=True).mean()
-        admissions = create_model(admissions,'Number of Admissions 7-day rolling mean','Admission Date')
         latest_adm_model = admissions.iloc[admissions[admissions['Number of Admissions 7-day rolling mean model_daily_change'].notna()]['Admission Date'].idxmax()]
-        deaths = deaths.groupby('Date of Death')['Number of Deaths'].sum().reset_index()
-        deaths.set_index('Date of Death', inplace=True)
-        newind = pandas.date_range(start=deaths.index.min(), end=deaths.index.max())
-        deaths = deaths.reindex(newind)
-        deaths.index.name = 'Date of Death'
-        deaths.reset_index(inplace=True)
-        deaths.fillna(0, inplace=True)
-        deaths['Number of Deaths 7-day rolling mean'] = deaths['Number of Deaths'].rolling(7, center=True).mean()
+        adm_dis = admissions.merge(discharges, how='inner', left_on='Admission Date', right_on='Discharge Date', validate='1:1')
+        adm_dis.drop(columns=['Discharge Date'], inplace = True)
+        adm_dis.rename(columns={'Admission Date': 'Date'}, inplace = True)
+        adm_dis['Inpatients'] = adm_dis['Number of Admissions 7-day rolling mean'].cumsum() - adm_dis['Number of Discharges 7-day rolling mean'].cumsum()
+        adm_dis_7d = adm_dis.rename(columns={'Number of Admissions 7-day rolling mean': 'Admissions','Number of Discharges 7-day rolling mean': 'Discharges'})[['Date','Admissions','Discharges']]
+        adm_dis_7d = adm_dis_7d.melt(id_vars='Date')
 
         # Plot the case reports and 7-day average
         driver = get_chrome_driver()
@@ -142,7 +197,7 @@ def lambda_handler(event, context):
                 logging.error([f for f in os.listdir('/tmp/')])
             else:
                 plots[-1]['store'].seek(0)
-                plots[-1]['name'] = 'ni-cases-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
+                plots[-1]['name'] = 'ni-cases-linear-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
                 p = plot_key_ni_stats_date_range(df, admissions, deaths, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'), latest['Sample_Date'], 'log')
                 try:
                     plot = {'name': None, 'store': io.BytesIO()}
@@ -155,7 +210,20 @@ def lambda_handler(event, context):
                     logging.error([f for f in os.listdir('/tmp/')])
                 else:
                     plots[-1]['store'].seek(0)
-                    plots[-1]['name'] = 'ni-admissions-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
+                    plots[-1]['name'] = 'ni-cases-log-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
+                    p = plot_hospital_stats(adm_dis_7d, inpatients, icu, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'))
+                    try:
+                        plot = {'name': None, 'store': io.BytesIO()}
+                        p.save(fp=plot['store'], format='png', method='selenium', webdriver=driver)
+                        plots.append(plot)
+                    except:
+                        logging.exception('Failed to output plot')
+                        with open('/tmp/chromedriver.log') as log:
+                            logging.warning(log.read())
+                        logging.error([f for f in os.listdir('/tmp/')])
+                    else:
+                        plots[-1]['store'].seek(0)
+                        plots[-1]['name'] = 'ni-hospitals-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
 
         # Find the date since which the rate was as high/low
         symb_7d, est = find_previous(df, latest_7d, 'ROLLING 7 DAY POSITIVE TESTS')
@@ -268,6 +336,16 @@ def lambda_handler(event, context):
                     if t['text2'] is not None:
                         resp = api.tweet(t['text2'], resp.id)
                         messages[-1] += ('ID %s, ' %resp.id)
+
+                    # Update the file index
+                    for i in range(len(index)):
+                        if index[i]['filedate'] == t['filedate']:
+                            index[i]['tweet'] = resp.id
+                            index[i]['totals'] = t['totals']
+                            break
+                    status.put_dict(index)
+
+                    messages[-1] += ('updated %s' %secret['doh-dd-index'])
                 else:
                     if len(upload_ids) > 0:
                         resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'], upload_ids[0])
@@ -275,21 +353,11 @@ def lambda_handler(event, context):
                         resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'])
                     messages.append('Tweeted DM %s, ' %resp.id)
                     if len(upload_ids) > 1:
-                        resp = api.dm(secret['twitter_dmaccount'], t['text2'], upload_ids[1])
+                        resp = api.dm(secret['twitter_dmaccount'], t['text2'], upload_ids[-1])
                     else:
                         resp = api.dm(secret['twitter_dmaccount'], t['text2'])
             else:
                 messages.append('Duplicate found %s, did not tweet, ' %t['filedate'])
-
-            # Update the file index
-            for i in range(len(index)):
-                if index[i]['filedate'] == t['filedate']:
-                    index[i]['tweet'] = resp.id
-                    index[i]['totals'] = t['totals']
-                    break
-            status.put_dict(index)
-
-            messages[-1] += ('updated %s' %secret['doh-dd-index'])
         else:
             if (idx not in donottweet):
                 messages.append('Did not tweet')
