@@ -112,10 +112,17 @@ def get_eng_age_band_data():
     if url is None:
         raise Exception('Unable to find England data')
     # Get the age band data, transform and aggregate
-    eng = pandas.read_excel(url, sheet_name='Vaccinations by LTLA and Age ', header=[12,13])
-    eng.dropna(axis='columns', how='all', inplace=True)
-    eng.dropna(axis='index', how='all', inplace=True)
-    newcols = [clean_eng_age_band_cols(i) for i in eng.columns.values]
+    try:
+        eng = pandas.read_excel(url, sheet_name='Vaccinations by LTLA and Age ', header=[12,13])
+        eng.dropna(axis='columns', how='all', inplace=True)
+        eng.dropna(axis='index', how='all', inplace=True)
+        newcols = [clean_eng_age_band_cols(i) for i in eng.columns.values]
+    except AttributeError:
+        logging.exception('Falling back to earlier header row')
+        eng = pandas.read_excel(url, sheet_name='Vaccinations by LTLA and Age ', header=[11,12])
+        eng.dropna(axis='columns', how='all', inplace=True)
+        eng.dropna(axis='index', how='all', inplace=True)
+        newcols = [clean_eng_age_band_cols(i) for i in eng.columns.values]
     eng.columns = newcols
     eng.dropna(axis='index', subset=['UTLA Name'], inplace=True)
     eng = eng.drop(columns=['UTLA Code','UTLA Name','LTLA Code','LTLA Name','Total 1st Doses','Total 2nd Doses','Cumulative Total Doses (1st and 2nd doses) to Date'])
