@@ -452,18 +452,35 @@ def make_postcode_plots(driver, df, plots, today, last_updated):
             'colour': 'B'
         }, ignore_index=True)
     # Create the row chart for vaccinations per person
-    p = altair.vconcat(
-        altair.Chart(
-            df
-        ).mark_bar().encode(
-            x = altair.X('Vaccinations per Person:Q'),
-            y = altair.Y('Postcode District:O', sort='-x'),
-            color = altair.Color('colour:N', legend=None),
-        ).properties(
-            height=1000,
-            width=450,
-            title='NI COVID-19 Vaccinations per Person by Postcode District up to %s' %datetime.datetime.strptime(last_updated,'%Y-%m-%d').strftime('%-d %B %Y')
+    vpp = altair.Chart(
+        df
+    ).mark_bar().encode(
+        x = altair.X('Vaccinations per Person:Q'),
+        y = altair.Y(
+            'Postcode District:O',
+            sort=altair.EncodingSortField(
+                field='Vaccinations per Person',
+                op='min',
+                order='descending'
+            )
         ),
+        color = altair.Color('colour:N', legend=None),
+    ).properties(
+        height=1000,
+        width=450,
+        title='NI COVID-19 Vaccinations per Person by Postcode District up to %s' %datetime.datetime.strptime(last_updated,'%Y-%m-%d').strftime('%-d %B %Y')
+    )
+    p = altair.vconcat(
+        altair.layer(
+            vpp,
+            vpp.mark_text(
+                align='left',
+                baseline='middle',
+                dx=3,
+            ).encode(
+                text = altair.Text('Vaccinations per Person:Q', format='.3r'),
+            )
+        )
     ).properties(
         title=altair.TitleParams(
             ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
