@@ -106,15 +106,21 @@ def lambda_handler(event, context):
             logging.error('Failed to start chrome')
         else:
             datastore['End Date'] = pandas.to_datetime(datastore['End Date'])
+            weekly = datastore.groupby(['End Date','School Type','Incident Type']).sum()['Total'].reset_index()
+            weekly.sort_values('End Date', inplace=True)
+            weekly['New'] = weekly['Total'] - weekly.groupby(['School Type','Incident Type'])['Total'].shift(1)
+            weekly['order'] = weekly['Incident Type'].replace(
+                {val: i for i, val in enumerate(['Cluster (>5 cases)', 'Cluster (2-5 cases)', 'Single Case', 'White'])}
+            )
             p = altair.vconcat(
                 altair.Chart(
-                    datastore.groupby(['End Date','Incident Type'])['Total'].sum().reset_index()
+                    weekly
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='Date reported')),
-                    y = altair.Y('Total:Q', axis=altair.Axis(title='Total reported', orient="right")),
-                    color='Incident Type',
+                    y = altair.Y('sum(New):Q', axis=altair.Axis(title='Newly reported', orient="right")),
+                    color=altair.Color('Incident Type', sort=altair.SortField('order',order='descending')),
                     order=altair.Order(
-                        'Incident Type',
+                        'order',
                         sort='ascending'
                     ),
                 ).properties(
@@ -136,6 +142,41 @@ def lambda_handler(event, context):
                 ),
             )
             plotname = 'pha-education-time-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m')
+            plotstore = io.BytesIO()
+            p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+            plotstore.seek(0)
+            plots.append({'name': plotname, 'store': plotstore})
+            p = altair.vconcat(
+                altair.Chart(
+                    weekly
+                ).mark_area().encode(
+                    x = altair.X('End Date:T', axis=altair.Axis(title='Date reported')),
+                    y = altair.Y('sum(New):Q', axis=altair.Axis(title='Newly reported', orient="right")),
+                    color=altair.Color('Incident Type', sort=altair.SortField('order',order='descending')),
+                    facet=altair.Facet('School Type:O', columns=2, title=None, spacing=0),
+                    order=altair.Order(
+                        'order',
+                        sort='ascending'
+                    ),
+                ).properties(
+                    height=450,
+                    width=800,
+                    title='NI COVID-19 School Surveillance reports from %s to %s' %(datastore['End Date'].min().strftime('%-d %B %Y'), datastore['End Date'].max().strftime('%-d %B %Y'))
+                ),
+            ).properties(
+                title=altair.TitleParams(
+                    ['Data from Public Health Agency',
+                    'Some data has been manually extracted',
+                    'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
+                    baseline='bottom',
+                    orient='bottom',
+                    anchor='end',
+                    fontWeight='normal',
+                    fontSize=10,
+                    dy=10
+                ),
+            )
+            plotname = 'pha-education--school-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m')
             plotstore = io.BytesIO()
             p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
             plotstore.seek(0)
