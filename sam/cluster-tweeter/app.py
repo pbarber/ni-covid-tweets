@@ -33,7 +33,7 @@ def lambda_handler(event, context):
             s3.download_fileobj(secret['bucketname'],change['keyname'],fp)
         # Get the date range covered by the report
         text = textract.process(tmp.name, method='pdfminer').decode('utf-8')
-        regex = re.compile(r'between (\d{1,2})(?:st|nd|rd|th)\s+([A-Z][a-z]+)\s+(\d{4})\s+\–+\s+(\d{1,2})(?:st|nd|rd|th)\s+([A-Z][a-z]+)\s+(\d{4})')
+        regex = re.compile(r'(\d{1,2})(?:st|nd|rd|th)\s+([A-Z][a-z]+)\s+(\d{4})\s+\–+\s+(\d{1,2})(?:st|nd|rd|th)\s+([A-Z][a-z]+)\s+(\d{4})')
         start_date = None
         end_date = None
         for line in text.split('\n'):
