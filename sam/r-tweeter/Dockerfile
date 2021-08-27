@@ -17,6 +17,7 @@ COPY twitter_shared/__init__.py ./twitter_shared/__init__.py
 COPY plot_shared/__init__.py plot_shared/
 COPY r-tweeter/app.py ./
 COPY cluster-tweeter/app.py ./cluster_tweeter.py
+COPY bulletin-tweeter/app.py ./bulletin_tweeter.py
 
 # Overwrite the command by providing a different command directly in the template.
 CMD ["app.lambda_handler"]
