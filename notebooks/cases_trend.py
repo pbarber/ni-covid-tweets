@@ -623,7 +623,7 @@ for scale in ['log','linear']:
         [
             {
                 'points': None,
-                'line': df[(df['Date'] > '2021-05-08')].set_index(['Date','Nation'])['Rolling cases per 100k'],
+                'line': df[(df['Date'] > (df['Date'].max()-pandas.to_timedelta(42, unit='d')))].set_index(['Date','Nation'])['Rolling cases per 100k'],
                 'colour': 'Nation',
                 'date_col': 'Date',
                 'x_title': 'Specimen Date',
@@ -645,7 +645,7 @@ for scale in ['log','linear']:
             'https://twitter.com/ni_covid19_data'
         ]
     )
-    plt.save('nations-cases-100k-%s-%s.png'%(scale,datetime.datetime.now().date().strftime('%Y-%d-%m')))
+    plt.save('nations-cases-100k-%s-%s.png'%(scale,datetime.datetime.now().date().strftime('%Y-%m-%d')))
 
 # %% All data
 plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2020-03-18','%Y-%m-%d'), datetime.datetime.strptime('2021-07-23','%Y-%m-%d'), 'linear')
