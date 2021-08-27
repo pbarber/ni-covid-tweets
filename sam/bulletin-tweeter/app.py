@@ -109,15 +109,51 @@ def lambda_handler(event, context):
             weekly = datastore.groupby(['End Date','School Type','Incident Type']).sum()['Total'].reset_index()
             weekly.sort_values('End Date', inplace=True)
             weekly['New'] = weekly['Total'] - weekly.groupby(['School Type','Incident Type'])['Total'].shift(1)
+            weekly['New no neg'] = weekly['New'].clip(lower=0) # Remove negatives for the detailed plot
             weekly['order'] = weekly['Incident Type'].replace(
                 {val: i for i, val in enumerate(['Cluster (>5 cases)', 'Cluster (2-5 cases)', 'Single Case', 'White'])}
             )
+            latest = weekly[weekly['End Date']==weekly['End Date'].max()]
             p = altair.vconcat(
                 altair.Chart(
-                    weekly
+                    latest
+                ).mark_bar().encode(
+                    x = altair.X('New:Q', axis=altair.Axis(title='Total reported', tickMinStep=1)),
+                    y = altair.Y('School Type:O', sort=['Preschool','Primary','Post Primary','Special']),
+                    color=altair.Color('Incident Type', sort=altair.SortField('order',order='descending')),
+                    order=altair.Order(
+                        'order',
+                        sort='ascending'
+                    ),
+                ).properties(
+                    height=225,
+                    width=400,
+                    title='NI COVID-19 School Surveillance reports for week ending %s' %datastore['End Date'].max().strftime('%-d %B %Y')
+                ),
+            ).properties(
+                title=altair.TitleParams(
+                    ['Data from Public Health Agency',
+                    'Some data has been manually extracted',
+                    'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
+                    baseline='bottom',
+                    orient='bottom',
+                    anchor='end',
+                    fontWeight='normal',
+                    fontSize=10,
+                    dy=10
+                ),
+            )
+            plotname = 'pha-outbreaks-week-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m')
+            plotstore = io.BytesIO()
+            p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+            plotstore.seek(0)
+            plots.append({'name': plotname, 'store': plotstore})
+            p = altair.vconcat(
+                altair.Chart(
+                    weekly[~weekly['New'].isna()]
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='Date reported')),
-                    y = altair.Y('sum(New):Q', axis=altair.Axis(title='Newly reported', orient="right")),
+                    y = altair.Y('sum(New):Q', axis=altair.Axis(title='Newly reported', orient="right", tickMinStep=1)),
                     color=altair.Color('Incident Type', sort=altair.SortField('order',order='descending')),
                     order=altair.Order(
                         'order',
@@ -148,25 +184,28 @@ def lambda_handler(event, context):
             plots.append({'name': plotname, 'store': plotstore})
             p = altair.vconcat(
                 altair.Chart(
-                    weekly
+                    weekly[~weekly['New'].isna()]
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='Date reported')),
-                    y = altair.Y('sum(New):Q', axis=altair.Axis(title='Newly reported', orient="right")),
+                    y = altair.Y('sum(New no neg):Q', axis=altair.Axis(title='Newly reported', orient="right", tickMinStep=1)),
                     color=altair.Color('Incident Type', sort=altair.SortField('order',order='descending')),
-                    facet=altair.Facet('School Type:O', columns=2, title=None, spacing=0),
+                    facet=altair.Facet('School Type:O', columns=2, title=None, spacing=0, sort=['Preschool','Primary','Post Primary','Special']),
                     order=altair.Order(
                         'order',
                         sort='ascending'
                     ),
                 ).properties(
-                    height=450,
-                    width=800,
-                    title='NI COVID-19 School Surveillance reports from %s to %s' %(datastore['End Date'].min().strftime('%-d %B %Y'), datastore['End Date'].max().strftime('%-d %B %Y'))
+                    height=225,
+                    width=450,
+                    title=altair.TitleParams(
+                        'NI COVID-19 School Surveillance reports from %s to %s' %(datastore['End Date'].min().strftime('%-d %B %Y'), datastore['End Date'].max().strftime('%-d %B %Y')),
+                        anchor='middle',
+                    ),
                 ),
             ).properties(
                 title=altair.TitleParams(
                     ['Data from Public Health Agency',
-                    'Some data has been manually extracted',
+                    'Some data has been manually extracted, negative values have been removed',
                     'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
                     baseline='bottom',
                     orient='bottom',
@@ -182,7 +221,21 @@ def lambda_handler(event, context):
             plotstore.seek(0)
             plots.append({'name': plotname, 'store': plotstore})
             change = event[0]
-            tweet = 'Text goes here'
+            tweet = '''School Surveillance for COVID-19 in NI, week ending {end_date}
+\u2022 Preschool: {preschool:,} incidents
+\u2022 Primary: {primary:,}
+\u2022 Post Primary: {post_primary:,}
+\u2022 Special: {special:,}
+\u2022 Total: {total:,}
+
+Source: https://www.publichealth.hscni.net/publications/coronavirus-bulletin'''.format(
+                end_date=latest['End Date'].max().strftime('%-d %B %Y'),
+                preschool=int(latest[latest['School Type']=='Preschool']['New'].sum()),
+                primary=int(latest[latest['School Type']=='Primary']['New'].sum()),
+                post_primary=int(latest[latest['School Type']=='Post Primary']['New'].sum()),
+                special=int(latest[latest['School Type']=='Special']['New'].sum()),
+                total=int(latest['New'].sum())
+            )
             if change.get('notweet') is not True:
                 api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
                 upload_ids = api.upload_multiple(plots)
