@@ -69,7 +69,7 @@ Resources:
     Properties:
       PackageType: Image
       MemorySize: 2048
-      Timeout: 1200
+      Timeout: 600
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
         MaximumRetryAttempts: 0
