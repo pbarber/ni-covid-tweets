@@ -16,6 +16,10 @@ from plot_shared import get_chrome_driver
 good_symb = '\u2193'
 bad_symb = '\u2191'
 
+# Function to do pango lineage match
+def match(lineage, col):
+    return (col.str.slice(stop=len(lineage))==lineage)
+
 def lambda_handler(event, context):
     messages = []
 
@@ -31,56 +35,51 @@ def lambda_handler(event, context):
         index = status.get_dict()
 
         # Create a copy of the file in s3
-        keyname = "COG-variants/%s/%s-%s.csv" %(event['filedate'],event['modified'].replace(':','_'),event['length'])
-        print('getting URL')
-        with requests.get(event['url'], stream=True) as stream:
-            stream.raise_for_status()
-            stream.raw.decode_content = True
-            s3.upload_fileobj(stream.raw, secret['bucketname'], keyname, Config=boto3.s3.transfer.TransferConfig(use_threads=False))
-        print('done')
+        if 'keyname' not in event:
+            keyname = "COG-variants/%s/%s-%s.csv" %(event['filedate'],event['modified'].replace(':','_'),event['length'])
+            print('getting URL')
+            with requests.get(event['url'], stream=True) as stream:
+                stream.raise_for_status()
+                stream.raw.decode_content = True
+                s3.upload_fileobj(stream.raw, secret['bucketname'], keyname, Config=boto3.s3.transfer.TransferConfig(use_threads=False))
+            print('done')
+        else:
+            keyname = event['keyname']
 
         # Download the most recently updated CSV file
         obj = s3.get_object(Bucket=secret['bucketname'],Key=keyname)['Body']
         stream = io.BytesIO(obj.read())
 
-        # Dataframe for converting between pago lineage and WHO labels
-        lineage_lookup = pandas.DataFrame([
-            {'WHO label': 'Alpha', 'Pango lineage': 'B.1.1.7'},
-            {'WHO label': 'Beta', 'Pango lineage': 'B.1.351'},
-            {'WHO label': 'Beta', 'Pango lineage': 'B.1.351.2'},
-            {'WHO label': 'Beta', 'Pango lineage': 'B.1.351.3'},
-            {'WHO label': 'Gamma', 'Pango lineage': 'P.1'},
-            {'WHO label': 'Gamma', 'Pango lineage': 'P.1.1'},
-            {'WHO label': 'Gamma', 'Pango lineage': 'P.1.2'},
-            {'WHO label': 'Gamma', 'Pango lineage': 'P.1.4'},
-            {'WHO label': 'Gamma', 'Pango lineage': 'P.1.6'},
-            {'WHO label': 'Gamma', 'Pango lineage': 'P.1.7'},
-            {'WHO label': 'Delta', 'Pango lineage': 'B.1.617.2'},
-            {'WHO label': 'Delta', 'Pango lineage': 'AY.1'},
-            {'WHO label': 'Delta', 'Pango lineage': 'AY.2'},
-            {'WHO label': 'Delta', 'Pango lineage': 'AY.3'},
-            {'WHO label': 'Delta', 'Pango lineage': 'AY.3.1'},
-            {'WHO label': 'Epsilon', 'Pango lineage': 'B.1.427'},
-            {'WHO label': 'Zeta', 'Pango lineage': 'P.2'},
-            {'WHO label': 'Eta', 'Pango lineage': 'B.1.525'},
-            {'WHO label': 'Theta', 'Pango lineage': 'P.3'},
-            {'WHO label': 'Iota', 'Pango lineage': 'B.1.526'},
-            {'WHO label': 'Kappa', 'Pango lineage': 'B.1.617.1'},
-            {'WHO label': 'Lambda', 'Pango lineage': 'C.37'},
-        ])
+        # Dataframe for converting between pango lineage and WHO labels
+        # Get the mapping from the raw Github URL
+        resp = requests.get('https://github.com/pbarber/covid19-pango-lineage-to-who-label/raw/main/mapping.json')
+        # Make sure that the request was successful
+        resp.raise_for_status()
+        # Convert the request data to a Python dictionary
+        mapping = resp.json()
+        # Expand the Pango column
+        mapping = pandas.DataFrame(mapping).explode('Pango lineages').reset_index(drop=True)
+        # Filter out old designations
+        mapping_current = mapping[mapping['Designation'] != 'Former Variant of Interest']
 
         # Load variant data, aggregate and push back to S3
         df = pandas.read_csv(stream)
         df = df[df['adm1']=='UK-NIR']
         df['Sample Date'] = pandas.to_datetime(df['sample_date'])
         df['Week of sample'] = df['Sample Date'] - pandas.to_timedelta(df['Sample Date'].dt.dayofweek, unit='d')
-        df = df.merge(lineage_lookup, how='left', left_on='lineage', right_on='Pango lineage')
+        # Join the lineage data
+        matches = mapping['Pango lineages'].apply(match, col=df['lineage'])
+        match_idx = matches.idxmax()
+        # Filter out indexes where there is no match
+        match_idx[match_idx==matches.idxmin()] = pandas.NA
+        df['idx'] = match_idx
+        # Join to the mapping based on indexes
+        df = df.merge(mapping, how='left', left_on='idx', right_index=True).drop(columns=['idx','Pango lineages'])
         df['WHO label'] = df['WHO label'].fillna('Other')
         lin_by_week = df.groupby(['Week of sample','WHO label']).size().rename('count')
         lin_pc_by_week = lin_by_week/lin_by_week.groupby(level=0).sum()
         lin_by_week = pandas.DataFrame(lin_by_week).reset_index()
         lin_pc_by_week = pandas.DataFrame(lin_pc_by_week).reset_index()
-        lineage = df.groupby('lineage').size().reset_index(name='count')
         stream = io.BytesIO()
         lin_by_week.to_csv(stream, index=False)
         stream.seek(0)
@@ -108,10 +107,13 @@ def lambda_handler(event, context):
             obj = s3.get_object(Bucket=secret['bucketname'],Key=prev_lineagekey)['Body']
             stream = io.BytesIO(obj.read())
             prev_lineage = pandas.read_csv(stream)
-            lineage = lineage.merge(prev_lineage, how='left', left_on='lineage', right_on='lineage')
-            lineage = lineage.merge(lineage_lookup, how='left', left_on='lineage', right_on='Pango lineage')
-            lineage['WHO label'] = lineage['WHO label'].fillna('Other')
+            if 'WHO label' not in prev_lineage.columns:
+                prev_lineage['WHO label'] = 'Other'
+            prev_lineage = prev_lineage.groupby('WHO label')['count'].sum()
+            lineage = lin_by_week.groupby('WHO label')['count'].sum().reset_index()
+            lineage = lineage.merge(prev_lineage, how='left', on='WHO label')
             lineage = lineage.groupby('WHO label').sum()[['count_x','count_y']]
+            lineage['count_y'] = lineage['count_y'].fillna(0)
             lineage['diff'] = (lineage['count_x'] - lineage['count_y']).fillna(0).astype(int)
             top5 = lineage.nlargest(5, 'diff')
             tweet = """{total:,d} new variant analyses reported for NI on {currdate} since {prevdate} ({altogether:,d} total):
