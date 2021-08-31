@@ -1,8 +1,10 @@
 {
-    "url": "https://cog-uk-microreact.s3.climb.ac.uk/2021-06-28/cog_metadata_microreact_uk_geocoded.csv",
-    "modified": "2021-05-18T16:29:53",
-    "length": 116060678,
-    "filedate": "2021-06-28",
+    "url": "https://cog-uk-microreact.s3.climb.ac.uk/2021-08-24/cog_metadata_microreact_uk_geocoded.csv",
+    "modified": "2021-08-27T12:08:08",
+    "length": 72307276,
+    "filedate": "2021-08-24",
+    "lineage": "COG-variants/2021-08-24/2021-08-27T12_08_08-72307276_lineage.csv",
+    "keyname": "COG-variants/2021-08-24/2021-08-27T12_08_08-72307276.csv",
     "notweet": false,
     "testtweet": true
 }
