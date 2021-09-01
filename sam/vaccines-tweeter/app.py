@@ -740,6 +740,8 @@ One block is one person in 20
         print(tweet2)
         if tweet3 is not None:
             print(tweet3)
+        if tweet4 is not None:
+            print(tweet4)
         message = 'Did not tweet'
 
     return {
