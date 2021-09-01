@@ -237,10 +237,10 @@ def check_phe(original):
         data['First Doses pc'] = round((100 * data['Total First Doses']) / 1499694, 1)  # NI 16 and over
         data['Second Doses pc'] = round((100 * data['Total Second Doses']) / 1499694, 1)
         if len(previous) > 0:
-            if (data['Last Updated'] != previous[0]['Last Updated']):
+            if (data['Last Updated'] > previous[0]['Last Updated']):
                 previous.insert(0, data)
                 change = True
-            elif (data['Total Doses'] != previous[0]['Total Doses']):
+            elif (data['Last Updated'] == previous[0]['Last Updated']) and (data['Total Doses'] > previous[0]['Total Doses']):
                 previous[0] = data
                 change = True
         else:
