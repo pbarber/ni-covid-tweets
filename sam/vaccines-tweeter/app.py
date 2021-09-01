@@ -131,13 +131,13 @@ def get_eng_age_band_data():
     eng.drop(columns=['index'],inplace=True)
     eng = eng.set_index(['Dose','Age Band'])
     eng = eng.fillna(0).sum(axis=1)
-    eng.name = 'Total'
+    eng.name = 'First Doses'
     eng = eng.reset_index()
-    eng['Total'] = eng['Total'].astype(int)
-    eng = eng[eng['Dose']=='1st dose'][['Age Band', 'Total']]
+    eng['First Doses'] = eng['First Doses'].astype(int)
+    eng = eng[eng['Dose']=='1st dose'][['Age Band', 'First Doses']]
     # Join to the population data and group by band
     eng = eng.merge(age_bands, how='inner', left_on='Age Band', right_on='Eng bands', validate='1:1')
-    eng = eng.groupby(['Band']).sum()['Total'].reset_index()
+    eng = eng.groupby(['Band']).sum()['First Doses'].reset_index()
     eng = eng.merge(pop, how='inner', left_on='Band', right_on='Band', validate='1:1')
     eng['Nation'] = 'England'
     return eng
@@ -199,29 +199,51 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir):
         raise Exception('Unknown table format')
     ni = pandas.DataFrame({'Age Band': headers, 'Total': cells[len(headers):]})
     ni['Total'] = ni['Total'].str.replace(',','').astype(int)
+    # Right click on the bubble chart
+    WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CLASS_NAME, "visual-columnChart")))
+    webdriver.ActionChains(driver).context_click(driver.find_element_by_class_name("visual-columnChart")).perform()
+    # Click show as table
+    WebDriverWait(driver, 20).until(EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'Show as a table')]")))
+    driver.find_element_by_xpath("//*[contains(text(), 'Show as a table')]").click()
+    items = [
+        my_elem.text for my_elem in WebDriverWait(
+            driver, 20).until(
+                EC.visibility_of_all_elements_located((
+                    By.CSS_SELECTOR,
+                    ".pivotTable .innerContainer .rowHeaders div div .pivotTableCellWrap, .pivotTable .innerContainer .bodyCells div div div .pivotTableCellWrap"
+                ))
+            )
+        ]
+    headers = [item for item in items if ('-' in item) or ('+' in item)]
+    cells = [item for item in items if ('-' not in item) and ('+' not in item) and ('%' not in item)]
+    df = pandas.DataFrame({'Age Band': headers, 'First Doses': cells[:len(headers)], 'Second Doses': cells[len(headers):]})
+    df['First Doses'] = df['First Doses'].str.replace(',','').astype(int)
+    df['Second Doses'] = df['Second Doses'].str.replace(',','').astype(int)
+    ni = ni.merge(df, how='left', on='Age Band').drop(columns='First Doses')
+    ni.rename(columns={'Total': 'First Doses'}, inplace=True)
     # Combine into age bands
     ni = ni.merge(age_bands, how='inner', left_on='Age Band', right_on='NI bands', validate='1:1')
-    ni_as_reported = ni.groupby(['Age Band']).sum()['Total'].reset_index()
+    ni_as_reported = ni.groupby(['Age Band']).sum()[['First Doses','Second Doses']].reset_index()
     ni_as_reported = ni_as_reported.merge(pop_reported, how='right', left_on='Age Band', right_on='Band', validate='1:1')
-    ni_as_reported = ni_as_reported[['Band', 'Order', 'Total', 'Population', '% of total population']]
+    ni_as_reported = ni_as_reported[['Band', 'Order', 'First Doses', 'Second Doses', 'Population', '% of total population']]
     # Update the s3 store
     keyname = '%s/agebands.csv' % s3_dir
     datastore = update_datastore(s3, bucketname, keyname, last_updated, ni_as_reported)
     previous_date = datastore[datastore['Date'] < datastore['Date'].max()]['Date'].max()
-    previous = datastore[datastore['Date'] == previous_date][['Band', 'Total']].rename(columns={'Total':'Previous'})
+    previous = datastore[datastore['Date'] == previous_date][['Band', 'First Doses','Second Doses']].rename(columns={'First Doses':'Previous First', 'Second Doses':'Previous Second'})
     if len(previous) > 0:
         ni_as_reported = ni_as_reported.merge(previous, how='left', on='Band')
     # Combine with the comparable population data
-    ni = ni.groupby(['Band']).sum()['Total'].reset_index()
+    ni = ni.groupby(['Band']).sum()[['First Doses','Second Doses']].reset_index()
     ni = ni.merge(pop, how='right', on='Band', validate='1:1')
-    ni = ni[['Band', 'Order', 'Total', 'Population', '% of total population']]
+    ni = ni[['Band', 'Order', 'First Doses', 'Second Doses', 'Population', '% of total population']]
     ni['Nation'] = 'Northern Ireland'
     return ni, ni_as_reported
 
 def make_age_band_plots(driver, ni, plots, today):
     eng = get_eng_age_band_data()
     df = pandas.concat([ni, eng])
-    df['Percentage first doses'] = (df['Total']/df['Population']).clip(upper=1.0)
+    df['Percentage first doses'] = (df['First Doses']/df['Population']).clip(upper=1.0)
     df['First doses as % of total population'] = df['Percentage first doses'] * df['% of total population']
     ni_done = df[df['Nation']=='Northern Ireland']['First doses as % of total population'].sum()
     eng_done = df[df['Nation']=='England']['First doses as % of total population'].sum()
@@ -626,26 +648,51 @@ One block is one person in 20
         except:
             logging.exception('Caught exception in scraping/plotting')
     tweet3 = None
-    first = True
+    tweet4 = None
     try:
         if ni_age_bands_reported is not None:
+
             tweet3 = 'NI COVID-19 first doses by age band\n\n'
+            first = True
             for _,data in ni_age_bands_reported.to_dict('index').items():
                 fstring = '\u2022 {band}: {pct_done:.1%}'
                 if first:
                     fstring += ' of total'
-                if 'Previous' in data:
+                if 'Previous First' in data:
                     fstring += ', {new:,}'
                     if first:
                         fstring += ' new'
                 fstring += '\n'
-                if not pandas.isna(data['Total']):
+                if not pandas.isna(data['First Doses']):
                     tweet3 += fstring.format(
                         band=data['Band'],
-                        pct_done=data['Total']/data['Population'],
-                        new=int(data['Total']-data.get('Previous',0)),
+                        pct_done=data['First Doses']/data['Population'],
+                        new=int(data['First Doses']-data.get('Previous First',0)),
                     )
                     first = False
+            tweet4 = 'NI COVID-19 second doses by age band\n\n'
+            first = True
+            for _,data in ni_age_bands_reported.to_dict('index').items():
+                if data['Second Doses'] > 0:
+                    fstring = '\u2022 {band}: {pct_done:.1%}'
+                    if first:
+                        fstring += ' of total'
+                    if ('Previous Second' in data) and (not pandas.isna(data['Second Doses'])):
+                        fstring += ', {new:,}'
+                        if first:
+                            fstring += ' new'
+                    fstring += '\n'
+                    if not pandas.isna(data['Second Doses']):
+                        if pandas.isna(data.get('Previous Second',0)):
+                            change = 0
+                        else:
+                            change = data['Second Doses']-data.get('Previous Second',0)
+                        tweet4 += fstring.format(
+                            band=data['Band'],
+                            pct_done=data['Second Doses']/data['Population'],
+                            new=int(change),
+                        )
+                        first = False
     except:
         logging.exception('Caught error in age band tweet')
 
@@ -663,6 +710,8 @@ One block is one person in 20
                 resp = api.dm(secret['twitter_dmaccount'], tweet2)
             if tweet3 is not None:
                 resp = api.dm(secret['twitter_dmaccount'], tweet3)
+            if tweet4 is not None:
+                resp = api.dm(secret['twitter_dmaccount'], tweet4)
             message = 'Sent test DM'
         else:
             if len(upload_ids) > 0:
@@ -681,6 +730,10 @@ One block is one person in 20
 
             if tweet3 is not None:
                 resp = api.tweet(tweet3, resp.id)
+                message = 'Tweeted reply ID %s' %resp.id
+
+            if tweet4 is not None:
+                resp = api.tweet(tweet4, resp.id)
                 message = 'Tweeted reply ID %s' %resp.id
     else:
         print(tweet)
