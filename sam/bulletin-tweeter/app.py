@@ -148,9 +148,10 @@ def lambda_handler(event, context):
             p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
             plotstore.seek(0)
             plots.append({'name': plotname, 'store': plotstore})
+            toplot = weekly[(~weekly['New'].isna()) & (weekly['End Date'] > weekly['End Date'].max()-pandas.to_timedelta(84, unit='d'))]
             p = altair.vconcat(
                 altair.Chart(
-                    weekly[(~weekly['New'].isna()) & (weekly['End Date'] > weekly['End Date'].max()-pandas.to_timedelta(84, unit='d'))]
+                    toplot
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='Date reported')),
                     y = altair.Y('sum(New):Q', axis=altair.Axis(title='Newly reported', orient="right", tickMinStep=1)),
@@ -162,7 +163,7 @@ def lambda_handler(event, context):
                 ).properties(
                     height=450,
                     width=800,
-                    title='NI COVID-19 School Surveillance reports from %s to %s' %(datastore['End Date'].min().strftime('%-d %B %Y'), datastore['End Date'].max().strftime('%-d %B %Y'))
+                    title='NI COVID-19 School Surveillance reports from %s to %s' %(toplot['End Date'].min().strftime('%-d %B %Y'), toplot['End Date'].max().strftime('%-d %B %Y'))
                 ),
             ).properties(
                 title=altair.TitleParams(
@@ -184,7 +185,7 @@ def lambda_handler(event, context):
             plots.append({'name': plotname, 'store': plotstore})
             p = altair.vconcat(
                 altair.Chart(
-                    weekly[(~weekly['New'].isna()) & (weekly['End Date'] > weekly['End Date'].max()-pandas.to_timedelta(84, unit='d'))]
+                    toplot
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='Date reported')),
                     y = altair.Y('sum(New no neg):Q', axis=altair.Axis(title='Newly reported', orient="right", tickMinStep=1)),
@@ -198,7 +199,7 @@ def lambda_handler(event, context):
                     height=225,
                     width=450,
                     title=altair.TitleParams(
-                        'NI COVID-19 School Surveillance reports from %s to %s' %(datastore['End Date'].min().strftime('%-d %B %Y'), datastore['End Date'].max().strftime('%-d %B %Y')),
+                        'NI COVID-19 School Surveillance reports from %s to %s' %(toplot['End Date'].min().strftime('%-d %B %Y'), toplot['End Date'].max().strftime('%-d %B %Y')),
                         anchor='middle',
                     ),
                 ),
