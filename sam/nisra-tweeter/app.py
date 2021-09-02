@@ -1,12 +1,15 @@
 import json
 import io
 import datetime
+import logging
 
 import boto3
 import pandas
+import altair
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
+from plot_shared import get_chrome_driver
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -35,7 +38,6 @@ def lambda_handler(event, context):
         df.dropna('columns',how='all',inplace=True)
         df.rename(columns=colclean,inplace=True)
         df.dropna('rows',subset=['Total'],inplace=True)
-        print(df)
 
         # Get the latest dates with values for tests and rolling
         df['date'] = pandas.to_datetime(df['Week Ending'], format='%d/%m/%Y')
@@ -45,6 +47,7 @@ def lambda_handler(event, context):
         # Check against previous day's reports
         status = S3_scraper_index(s3, secret['bucketname'], secret['nisra-deaths-index'])
         index = status.get_dict()
+        plots = []
         if latest['Total'] == 0:
             tweet = '''No deaths registered in Northern Ireland, week ended {date}
 
@@ -77,9 +80,54 @@ def lambda_handler(event, context):
                 diff=abs(int(diff)),
                 comp='fewer' if diff < 0 else 'more'
             )
+            try:
+                driver = get_chrome_driver()
+                plots = []
+                if driver is None:
+                    logging.error('Failed to start chrome')
+                else:
+                    toplot = df[(df['Week Ending'] > df['Week Ending'].max()-pandas.to_timedelta(84, unit='d'))]
+                    toplot = toplot.drop(columns=['Week of Death','date','Total']).melt(id_vars='Week Ending', var_name='Location', value_name='Deaths')
+                    print(toplot)
+                    p = altair.vconcat(
+                        altair.Chart(
+                            toplot
+                        ).mark_area().encode(
+                            x = altair.X('Week Ending:T', axis=altair.Axis(title='Week of death')),
+                            y = altair.Y('sum(Deaths):Q', axis=altair.Axis(title='Deaths', orient="right", tickMinStep=1)),
+                            color=altair.Color('Location', sort=altair.SortField('order',order='descending')),
+                        ).properties(
+                            height=450,
+                            width=800,
+                            title='NI COVID-19 Deaths reported by NISRA from %s to %s' %(toplot['Week Ending'].min().strftime('%-d %B %Y'), toplot['Week Ending'].max().strftime('%-d %B %Y'))
+                        ),
+                    ).properties(
+                        title=altair.TitleParams(
+                            ['Data from NISRA',
+                            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
+                            baseline='bottom',
+                            orient='bottom',
+                            anchor='end',
+                            fontWeight='normal',
+                            fontSize=10,
+                            dy=10
+                        ),
+                    )
+                    plotname = 'nisra-deaths-time-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m')
+                    plotstore = io.BytesIO()
+                    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+                    plotstore.seek(0)
+                    plots.append({'name': plotname, 'store': plotstore})
+            except:
+                logging.exception('Error creating plot')
 
-
-        tweets.append({'text': tweet, 'url': change['url'], 'notweet': change.get('notweet'), 'filedate': change['filedate']})
+        tweets.append({
+            'text': tweet,
+            'url': change['url'],
+            'notweet': change.get('notweet'),
+            'filedate': change['filedate'],
+            'plots': plots
+        })
 
     donottweet = []
     if len(tweets) > 1:
@@ -90,29 +138,37 @@ def lambda_handler(event, context):
 
     messages = []
     for idx in range(len(tweets)):
-        if tweets[idx].get('notweet') is not True:
-            if (idx not in donottweet):
+        tweet = tweets[idx]['text'] + tweets[idx]['url']
+        if (idx not in donottweet):
+            if tweets[idx].get('notweet') is not True:
                 api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-                resp = api.tweet(tweets[idx]['text'] + tweets[idx]['url'])
+                upload_ids = api.upload_multiple(tweets[idx]['plots'])
+                if change.get('testtweet') is True:
+                    if len(upload_ids) > 0:
+                        resp = api.dm(secret['twitter_dmaccount'], tweet, upload_ids[0])
+                    else:
+                        resp = api.dm(secret['twitter_dmaccount'], tweet)
+                    messages.append('Tweeted DM ID %s' %(resp.id))
+                else:
+                    if len(upload_ids) > 0:
+                        resp = api.tweet(tweet, media_ids=upload_ids)
+                    else:
+                        resp = api.tweet(tweet)
+                    messages.append('Tweeted ID %s, ' %resp.id)
 
-                messages.append('Tweeted ID %s, ' %resp.id)
+                    # Update the file index
+                    for i in range(len(index)):
+                        if index[i]['filedate'] == tweets[idx]['filedate']:
+                            index[i]['tweet'] = resp.id
+                            break
+                    status.put_dict(index)
+
+                    messages[-1] += ('updated %s' %secret['nisra-deaths-index'])
             else:
-                messages.append('Duplicate found %s, did not tweet, ' %tweets[idx]['filedate'])
-
-            # Update the file index
-            for i in range(len(index)):
-                if index[i]['filedate'] == tweets[idx]['filedate']:
-                    index[i]['tweet'] = resp.id
-                    break
-            status.put_dict(index)
-
-            messages[-1] += ('updated %s' %secret['nisra-deaths-index'])
-        else:
-            if (idx not in donottweet):
                 messages.append('Did not tweet')
-                print(tweets[idx]['text'] + tweets[idx]['url'])
-            else:
-                messages.append('Duplicate found %s, did not tweet, ' %tweets[idx]['filedate'])
+                print(tweet)
+        else:
+            messages.append('Duplicate found %s, did not tweet, ' %tweets[idx]['filedate'])
 
     return {
         "statusCode": 200,
