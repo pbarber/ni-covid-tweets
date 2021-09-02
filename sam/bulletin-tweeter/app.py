@@ -150,7 +150,7 @@ def lambda_handler(event, context):
             plots.append({'name': plotname, 'store': plotstore})
             p = altair.vconcat(
                 altair.Chart(
-                    weekly[~weekly['New'].isna()]
+                    weekly[(~weekly['New'].isna()) & (weekly['End Date'] > weekly['End Date'].max()-pandas.to_timedelta(84, unit='d'))]
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='Date reported')),
                     y = altair.Y('sum(New):Q', axis=altair.Axis(title='Newly reported', orient="right", tickMinStep=1)),
@@ -184,7 +184,7 @@ def lambda_handler(event, context):
             plots.append({'name': plotname, 'store': plotstore})
             p = altair.vconcat(
                 altair.Chart(
-                    weekly[~weekly['New'].isna()]
+                    weekly[(~weekly['New'].isna()) & (weekly['End Date'] > weekly['End Date'].max()-pandas.to_timedelta(84, unit='d'))]
                 ).mark_area().encode(
                     x = altair.X('End Date:T', axis=altair.Axis(title='Date reported')),
                     y = altair.Y('sum(New no neg):Q', axis=altair.Axis(title='Newly reported', orient="right", tickMinStep=1)),
