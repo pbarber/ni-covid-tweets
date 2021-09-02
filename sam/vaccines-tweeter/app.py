@@ -571,11 +571,11 @@ def lambda_handler(event, context):
 \u2022 {s_24:,} second
 \u2022 {pct_f:.0%}/{pct_s:.0%} dose mix
 
-{total:,} total doses
+{total:,} in total
 \u2022 {total_f:,} first
 \u2022 {total_s:,} second
 
-Population (16 and over) vaccinated
+Population (16+) vaccinated
 \u2022 {pop_f}% first
 \u2022 {pop_s}% second
 
