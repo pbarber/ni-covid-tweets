@@ -326,7 +326,7 @@ def check_for_nisra_files(s3client, bucket, previous):
     if durl.startswith('/'):
         durl = 'https://www.nisra.gov.uk' + durl
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly_Deaths%20-%20w%20e%2019th%20March%202021.XLSX
-    excels = extract_doh_file_list(get_url(session,durl,'text'), 1, r'w%20e%20(\d+[a-z]+%20[A-Za-z]+%20\d+).*\.xlsx$', [r'(\d)(st|nd|rd|th)', r'\1'], r'%d %B %Y')
+    excels = extract_doh_file_list(get_url(session,durl,'text'), 1, r'w%20e%20(\d+[a-z]+%20[A-Za-z]+%20\d+).*\.(?:xlsx|XLSX)$', [r'(\d)(st|nd|rd|th)', r'\1'], r'%d %B %Y')
     # Merge the new data into the previous list and detect changes
     index, changes = check_file_list_against_previous(excels, previous)
     # Upload the changed files to s3
