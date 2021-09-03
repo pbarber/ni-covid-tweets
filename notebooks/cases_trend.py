@@ -208,12 +208,21 @@ newind = pandas.date_range(start=df.index.min(), end=df.index.max())
 df = df.reindex(newind)
 df = df.reset_index().melt(id_vars='index', var_name='Nation', value_name='newCasesBySpecimenDate')
 df = df.rename(columns={'index': 'Date'}).sort_values('Date')
-df['New cases 7-day rolling mean'] = df.groupby('Nation').rolling(7, center=True).mean().droplevel(0)
+df['New cases 7-day rolling mean'] = df.groupby('Nation').rolling(7).mean().droplevel(0)
 df = df.merge(nationpop, how='left', left_on='Nation', right_on='Nation', validate='m:1')
 df['Rolling cases per 100k'] = 100000 * (df['New cases 7-day rolling mean'] / df['Population'])
 df['New cases per 100k'] = 100000 * (df['newCasesBySpecimenDate'] / df['Population'])
 df = create_models(df, 'Nation', 'Rolling cases per 100k')
 df = create_models(df, 'Nation', 'newCasesBySpecimenDate')
+
+# %% Load ROI data
+roi = pandas.read_csv('https://opendata.arcgis.com/api/v3/datasets/f6d6332820ca466999dbd852f6ad4d5a_0/downloads/data?format=csv&spatialRefId=4326')
+roi['Population'] = 5011500 # as in https://www.cso.ie/en/releasesandpublications/ep/p-pme/populationandmigrationestimatesapril2021/
+roi['Rolling cases per 100k'] = 100000 * (roi['Pos7'] / (7 * roi['Population']))
+roi['Nation'] = 'Ireland'
+roi['Date'] = roi['Date_HPSC'].str.slice(stop=10)
+roi['Date'] = pandas.to_datetime(roi['Date'], format='%Y/%m/%d')
+df = pandas.concat([df,roi])
 
 # %% Load NI regional data
 ni = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-130821.xlsx', sheet_name='Tests')
@@ -629,18 +638,18 @@ for scale in ['log','linear']:
                 'x_title': 'Specimen Date',
                 'y_title': 'New cases per 100k',
                 'scale': scale,
-                'colour_domain': ['England','Scotland','Wales','Northern Ireland'],
-                'colour_range': ['grey','#005eb8','#D30731','#076543']
+                'colour_domain': ['England','Scotland','Wales','Northern Ireland','Ireland'],
+                'colour_range': ['grey','#005eb8','#D30731','#076543','#FF8200']
             },
         ],
         '%s COVID-19 %s (7-day average, %s scale) reported on %s' %(
-            'UK',
+            'UK and Ireland',
             'cases per 100k people',
             scale,
             datetime.datetime.today().strftime('%A %-d %B %Y'),
         ),
         [
-            'Cases data from PHE dashboard/API',
+            'UK cases data from PHE dashboard/API, Ireland from geohive.ie',
             'Last two days likely to be revised upwards due to reporting delays',
             'https://twitter.com/ni_covid19_data'
         ]
