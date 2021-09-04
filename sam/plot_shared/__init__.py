@@ -1,6 +1,7 @@
 import logging
 import os
 import datetime
+import io
 
 from selenium import webdriver
 import altair
@@ -201,3 +202,18 @@ def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, s
             'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
         ],
     )
+
+def output_plot(p, plots, driver, name):
+    try:
+        plot = {'name': None, 'store': io.BytesIO()}
+        p.save(fp=plot['store'], format='png', method='selenium', webdriver=driver)
+        plots.append(plot)
+    except:
+        logging.exception('Failed to output plot')
+        with open('/tmp/chromedriver.log') as log:
+            logging.warning(log.read())
+        logging.error([f for f in os.listdir('/tmp/')])
+    else:
+        plots[-1]['store'].seek(0)
+        plots[-1]['name'] = name
+    return plots
