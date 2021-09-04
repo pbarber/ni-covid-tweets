@@ -1,4 +1,4 @@
-
+import io
 
 import pandas
 import requests
@@ -34,3 +34,20 @@ def get_eng_pop_pyramid():
 
 def get_ni_pop_pyramid():
     return get_ons_pop_pyramid('https://www.ons.gov.uk/visualisations/dvc1430/pyramids/pyramids/data/N92000002.json')
+
+def get_s3_csv_or_empty_df(s3, bucketname, keyname, columns):
+    try:
+        obj = s3.get_object(Bucket=bucketname,Key=keyname)['Body']
+    except s3.exceptions.NoSuchKey:
+        print("The object %s does not exist in bucket %s." %(keyname, bucketname))
+        return pandas.DataFrame(columns=columns)
+    else:
+        stream = io.BytesIO(obj.read())
+        return pandas.read_csv(stream)
+
+def push_csv_to_s3(df, s3, bucketname, keyname):
+    # Push the data to s3
+    stream = io.BytesIO()
+    df.to_csv(stream, index=False)
+    stream.seek(0)
+    s3.upload_fileobj(stream, bucketname, keyname)
