@@ -7,10 +7,12 @@ import logging
 import boto3
 import pandas
 import numpy
+import altair
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
-from plot_shared import get_chrome_driver, plot_key_ni_stats_date_range, plot_points_average_and_trend
+from plot_shared import get_chrome_driver, plot_key_ni_stats_date_range, plot_points_average_and_trend, output_plot
+from data_shared import get_s3_csv_or_empty_df, push_csv_to_s3
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -181,49 +183,74 @@ def lambda_handler(event, context):
         adm_dis_7d = adm_dis.rename(columns={'Number of Admissions 7-day rolling mean': 'Admissions','Number of Discharges 7-day rolling mean': 'Discharges'})[['Date','Admissions','Discharges']]
         adm_dis_7d = adm_dis_7d.melt(id_vars='Date')
 
+        # Age band data
+        age_bands = pandas.read_excel(stream,engine='openpyxl',sheet_name='Individuals 7 Days - 5yr Age')
+        age_bands['Total_Tests'] = age_bands['Positive_Tests'] + age_bands['Negative_Tests'] + age_bands['Indeterminate_Tests']
+        age_bands = age_bands.groupby('Age_Band_5yr').sum()[['Positive_Tests','Total_Tests']].reset_index()
+        age_bands['Positivity_Rate'] = age_bands['Positive_Tests'] / age_bands['Total_Tests']
+        age_bands['Band Start'] = age_bands['Age_Band_5yr'].str.extract('Aged (\d+)')
+        age_bands['Band End'] = age_bands['Age_Band_5yr'].str.extract('Aged \d+ - (\d+)')
+        age_bands['Date'] = df['Sample_Date'].max()
+        # Get the age bands datastore contents from S3
+        s3dir = change['keyname'].split('/',maxsplit=1)[0]
+        agebands_keyname = '%s/agebands.csv' %s3dir
+        datastore = get_s3_csv_or_empty_df(s3, secret['bucketname'], agebands_keyname, ['Date'])
+        # Remove any data already recorded for the current day
+        datastore['Date'] = pandas.to_datetime(datastore['Date'])
+        datastore = datastore[datastore['Date'] != df['Sample_Date'].max()]
+        # Append the new data
+        datastore = pandas.concat([datastore, age_bands])
+        # Send back to S3
+        push_csv_to_s3(datastore, s3, secret['bucketname'], agebands_keyname)
+        # Have to insert an extra date to get the first date shown - just altair things
+        datastore = datastore.append(
+            {
+                'Date': datastore['Date'].min() + pandas.DateOffset(days=-1),
+                'Positive_Tests': 1,
+                'Age_Band_5yr': 'Not Known'
+            }, ignore_index=True)
+
         # Plot the case reports and 7-day average
         driver = get_chrome_driver()
         plots = []
         if driver is not None:
+            today_str = datetime.datetime.now().date().strftime('%Y-%m-%d')
             p = plot_key_ni_stats_date_range(df, admissions, deaths, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'), latest['Sample_Date'], 'linear')
-            try:
-                plot = {'name': None, 'store': io.BytesIO()}
-                p.save(fp=plot['store'], format='png', method='selenium', webdriver=driver)
-                plots.append(plot)
-            except:
-                logging.exception('Failed to output plot')
-                with open('/tmp/chromedriver.log') as log:
-                    logging.warning(log.read())
-                logging.error([f for f in os.listdir('/tmp/')])
-            else:
-                plots[-1]['store'].seek(0)
-                plots[-1]['name'] = 'ni-cases-linear-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
+            plots = output_plot(p, plots, driver, 'ni-cases-linear-%s.png' % today_str)
+            if len(plots) > 0:
                 p = plot_key_ni_stats_date_range(df, admissions, deaths, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'), latest['Sample_Date'], 'log')
-                try:
-                    plot = {'name': None, 'store': io.BytesIO()}
-                    p.save(fp=plot['store'], format='png', method='selenium', webdriver=driver)
-                    plots.append(plot)
-                except:
-                    logging.exception('Failed to output plot')
-                    with open('/tmp/chromedriver.log') as log:
-                        logging.warning(log.read())
-                    logging.error([f for f in os.listdir('/tmp/')])
-                else:
-                    plots[-1]['store'].seek(0)
-                    plots[-1]['name'] = 'ni-cases-log-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
+                plots = output_plot(p, plots, driver, 'ni-cases-log-%s.png' % today_str)
+                if len(plots) > 1:
                     p = plot_hospital_stats(adm_dis_7d, inpatients, icu, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'))
-                    try:
-                        plot = {'name': None, 'store': io.BytesIO()}
-                        p.save(fp=plot['store'], format='png', method='selenium', webdriver=driver)
-                        plots.append(plot)
-                    except:
-                        logging.exception('Failed to output plot')
-                        with open('/tmp/chromedriver.log') as log:
-                            logging.warning(log.read())
-                        logging.error([f for f in os.listdir('/tmp/')])
-                    else:
-                        plots[-1]['store'].seek(0)
-                        plots[-1]['name'] = 'ni-hospitals-%s.png' % datetime.datetime.now().date().strftime('%Y-%d-%m')
+                    plots = output_plot(p, plots, driver, 'ni-hospitals-%s.png' % today_str)
+#                    if len(plots) > 2:
+#                        toplot = datastore[datastore['Date'] >= (datastore['Date'].max() + pandas.DateOffset(days=-42))]
+#                        ticks = 7
+#                        if len(toplot['Date'].unique()) < 7:
+#                            ticks = len(toplot['Date'].unique())
+#                        p = altair.vconcat(
+#                            altair.Chart(toplot).mark_rect().encode(
+#                                x = altair.X(field='Date', type='temporal', axis=altair.Axis(format='%e %b', tickCount=ticks)),
+#                                y = altair.Y(field='Age_Band_5yr', type='ordinal', sort=altair.SortField('Band Start'), title='Age Band'),
+#                                color = altair.Color(field='Positive_Tests', type='quantitative', title='Positive Tests (7 day total)')
+#                            ).properties(
+#                                height=450,
+#                                width=800,
+#                                title='NI COVID-19 Positive Tests by Age Band from %s to %s' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y'))
+#                            )
+#                        ).properties(
+#                            title=altair.TitleParams(
+#                                ['Data from DoH daily downloads',
+#                                'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().strftime('%A %-d %B %Y')],
+#                                baseline='bottom',
+#                                orient='bottom',
+#                                anchor='end',
+#                                fontWeight='normal',
+#                                fontSize=10,
+#                                dy=10
+#                            ),
+#                        )
+#                        plots = output_plot(p, plots, driver, 'ni-cases-age-bands-%s.png' % today_str)
 
         # Find the date since which the rate was as high/low
         symb_7d, est = find_previous(df, latest_7d, 'ROLLING 7 DAY POSITIVE TESTS')
