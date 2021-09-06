@@ -217,50 +217,65 @@ def lambda_handler(event, context):
                     plots = output_plot(p, plots, driver, 'ni-hospitals-%s.png' % today_str)
                     if len(plots) > 2:
                         toplot = datastore[datastore['Date'] >= (datastore['Date'].max() + pandas.DateOffset(days=-42))]
-                        toplot['Band Start'] = toplot['Band Start'].fillna(90).astype(int)
-                        toplot = toplot.groupby(['Date','Age_Band_5yr','Band Start']).sum()['Positive_Tests'].reset_index()
                         toplot['Date'] = pandas.to_datetime(toplot['Date'])
-                        toplot['Band Start'] = toplot['Band Start'].fillna(90).astype(int)
-                        toplot['Positive_Tests'] = toplot['Positive_Tests'].fillna(0).astype(int)
+                        newind = pandas.date_range(start=toplot['Date'].max() + pandas.DateOffset(days=-42), end=toplot['Date'].max())
+                        alldates = pandas.Series(newind)
+                        alldates.name = 'Date'
+                        toplot = toplot.merge(alldates, how='outer', left_on='Date', right_on='Date')
                         toplot['X'] = toplot['Date'].dt.strftime('%e %b')
+                        toplot['Most Recent Positive Tests'] = toplot['Positive_Tests'].where(toplot['Date'] == toplot['Date'].max()).apply(lambda x: f"{x:n}" if not pandas.isna(x) else "")
+                        toplot['Age_Band_5yr'].fillna('Not Known', inplace=True)
                         ticks = 7
                         if len(toplot['Date'].unique()) < 7:
                             ticks = len(toplot['Date'].unique())
+                        heatmap = altair.Chart(toplot).mark_rect().encode(
+                            x = altair.X(
+                                field='X',
+                                type='ordinal',
+                                axis=altair.Axis(
+                                    tickCount=ticks
+                                ),
+                                sort=altair.SortField(
+                                    'Date'
+                                ),
+                                title='Date'
+                            ),
+                            y = altair.Y(
+                                field='Age_Band_5yr',
+                                type='ordinal',
+                                sort=altair.SortField(
+                                    'Band Start'
+                                ),
+                                title='Age Band',
+                            ),
+                            color = altair.Color(
+                                field='Positive_Tests',
+                                type='quantitative',
+                                aggregate='sum',
+                                title='Positive Tests (7 day total)',
+                            )
+                        ).properties(
+                            height=450,
+                            width=800,
+                            title='NI COVID-19 Positive Tests by Age Band from %s to %s' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y'))
+                        )
+
                         p = altair.vconcat(
-                            altair.Chart(toplot).mark_rect().encode(
-                                x = altair.X(
-                                    field='X',
-                                    type='ordinal',
-                                    axis=altair.Axis(
-                                        tickCount=ticks
-                                    ),
-                                    sort=altair.SortField(
-                                        'Date'
-                                    ),
-                                    title='Date'
-                                ),
-                                y = altair.Y(
-                                    field='Age_Band_5yr',
-                                    type='ordinal',
-                                    sort=altair.SortField(
-                                        'Band Start'
-                                    ),
-                                    title='Age Band',
-                                ),
-                                color = altair.Color(
-                                    field='Positive_Tests',
-                                    type='quantitative',
-                                    aggregate='sum',
-                                    title='Positive Tests (7 day total)',
+                            altair.layer(
+                                heatmap,
+                                heatmap.mark_text(
+                                    align='right',
+                                    baseline='middle',
+                                    dx=43
+                                ).encode(
+                                    text = altair.Text('Most Recent Positive Tests'),
+                                    color = altair.value('black')
                                 )
-                            ).properties(
-                                height=450,
-                                width=800,
-                                title='NI COVID-19 Positive Tests by Age Band from %s to %s' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y'))
                             )
                         ).properties(
                             title=altair.TitleParams(
                                 ['Data from DoH daily downloads',
+                                'Numbers to right of chart show most recent 7 day total',
                                 'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().strftime('%A %-d %B %Y')],
                                 baseline='bottom',
                                 orient='bottom',
