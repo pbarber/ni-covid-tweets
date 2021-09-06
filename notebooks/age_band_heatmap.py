@@ -5,7 +5,7 @@ import datetime
 import boto3
 
 from plot_shared import get_chrome_driver
-from data_shared import get_s3_csv_or_empty_df
+from data_shared import get_s3_csv_or_empty_df, get_ni_pop_pyramid
 
 # %%
 age_bands = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-030921.xlsx', sheet_name='Individuals 7 Days - 5yr Age')
@@ -109,11 +109,13 @@ plt = altair.vconcat(
 plt
 
 # %%
-
-# %%
-a = toplot[toplot['Age_Band_5yr']=='Aged 10 - 14'][['Date','Age_Band_5yr','Positive_Tests','Band Start']]
-altair.Chart(a).mark_rect().encode(
-    x = 'Date:O',
-    y = 'Band Start:O',
-    color = 'Positive_Tests',
-)
+bands = datastore.groupby(['Age_Band_5yr','Band Start','Band End'], dropna=False).size().reset_index()[['Age_Band_5yr','Band Start','Band End']]
+bands = bands[bands['Age_Band_5yr']!='Not Known']
+bands.fillna(90, inplace=True)
+bands['Band End'] = bands['Band End'].astype(int)
+bands['Year'] = bands.apply(lambda x: range(x['Band Start'], x['Band End']+1), axis='columns')
+bands = bands.explode('Year').reset_index()
+pops = get_ni_pop_pyramid()
+pops = pops[pops['Year']==2020].groupby(['Age Band']).sum()['Population']
+bands = bands.merge(pops, how='inner', validate='1:1', right_index=True, left_on='Year')
+bands = bands.groupby('Age_Band_5yr').sum()['Population']
