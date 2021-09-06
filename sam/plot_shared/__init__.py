@@ -203,6 +203,33 @@ def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, s
         ],
     )
 
+def plot_heatmap(df, x, x_sort, x_title, y, y_sort, y_title, color, color_title):
+    return altair.Chart(df).mark_rect().encode(
+        x = altair.X(
+            field=x,
+            type='ordinal',
+            sort=altair.SortField(
+                x_sort
+            ),
+            title=x_title
+        ),
+        y = altair.Y(
+            field=y,
+            type='ordinal',
+            sort=altair.SortField(
+                y_sort
+            ),
+            title=y_title,
+        ),
+        color = altair.Color(
+            field=color,
+            type='quantitative',
+            aggregate='sum',
+            title=color_title,
+        )
+    )
+
+
 def output_plot(p, plots, driver, name):
     try:
         plot = {'name': None, 'store': io.BytesIO()}

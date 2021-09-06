@@ -11,8 +11,8 @@ import altair
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
-from plot_shared import get_chrome_driver, plot_key_ni_stats_date_range, plot_points_average_and_trend, output_plot
-from data_shared import get_s3_csv_or_empty_df, push_csv_to_s3
+from plot_shared import get_chrome_driver, plot_key_ni_stats_date_range, plot_points_average_and_trend, output_plot, plot_heatmap
+from data_shared import get_s3_csv_or_empty_df, push_csv_to_s3, get_ni_pop_pyramid
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -188,8 +188,8 @@ def lambda_handler(event, context):
         age_bands['Total_Tests'] = age_bands['Positive_Tests'] + age_bands['Negative_Tests'] + age_bands['Indeterminate_Tests']
         age_bands = age_bands.groupby('Age_Band_5yr').sum()[['Positive_Tests','Total_Tests']].reset_index()
         age_bands['Positivity_Rate'] = age_bands['Positive_Tests'] / age_bands['Total_Tests']
-        age_bands['Band Start'] = age_bands['Age_Band_5yr'].str.extract('Aged (\d+)')
-        age_bands['Band End'] = age_bands['Age_Band_5yr'].str.extract('Aged \d+ - (\d+)')
+        age_bands['Band Start'] = age_bands['Age_Band_5yr'].str.extract('Aged (\d+)').astype(float)
+        age_bands['Band End'] = age_bands['Age_Band_5yr'].str.extract('Aged \d+ - (\d+)').astype(float)
         age_bands['Date'] = df['Sample_Date'].max()
         # Get the age bands datastore contents from S3
         s3dir = change['keyname'].split('/',maxsplit=1)[0]
@@ -225,50 +225,50 @@ def lambda_handler(event, context):
                         toplot['X'] = toplot['Date'].dt.strftime('%e %b')
                         toplot['Most Recent Positive Tests'] = toplot['Positive_Tests'].where(toplot['Date'] == toplot['Date'].max()).apply(lambda x: f"{x:n}" if not pandas.isna(x) else "")
                         toplot['Age_Band_5yr'].fillna('Not Known', inplace=True)
-                        ticks = 7
-                        if len(toplot['Date'].unique()) < 7:
-                            ticks = len(toplot['Date'].unique())
-                        heatmap = altair.Chart(toplot).mark_rect().encode(
-                            x = altair.X(
-                                field='X',
-                                type='ordinal',
-                                axis=altair.Axis(
-                                    tickCount=ticks
-                                ),
-                                sort=altair.SortField(
-                                    'Date'
-                                ),
-                                title='Date'
-                            ),
-                            y = altair.Y(
-                                field='Age_Band_5yr',
-                                type='ordinal',
-                                sort=altair.SortField(
-                                    'Band Start'
-                                ),
-                                title='Age Band',
-                            ),
-                            color = altair.Color(
-                                field='Positive_Tests',
-                                type='quantitative',
-                                aggregate='sum',
-                                title='Positive Tests (7 day total)',
-                            )
-                        ).properties(
-                            height=450,
-                            width=800,
-                            title='NI COVID-19 Positive Tests by Age Band from %s to %s' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y'))
-                        )
+                        bands = toplot.groupby(['Age_Band_5yr','Band Start','Band End'], dropna=False).size().reset_index()[['Age_Band_5yr','Band Start','Band End']]
+                        bands = bands[bands['Age_Band_5yr']!='Not Known']
+                        bands.fillna(90, inplace=True)
+                        bands['Band End'] = bands['Band End'].astype(int)
+                        bands['Band Start'] = bands['Band Start'].astype(int)
+                        bands['Year'] = bands.apply(lambda x: range(x['Band Start'], x['Band End']+1), axis='columns')
+                        bands = bands.explode('Year').reset_index()
+                        pops = get_ni_pop_pyramid()
+                        pops = pops[pops['Year']==2020].groupby(['Age Band']).sum()['Population']
+                        bands = bands.merge(pops, how='inner', validate='1:1', right_index=True, left_on='Year')
+                        bands = bands.groupby('Age_Band_5yr').sum()['Population']
+                        toplot = toplot.merge(bands, how='left', on='Age_Band_5yr')
+                        toplot['Positive per 100k'] = (100000 * toplot['Positive_Tests']) / toplot['Population']
+                        toplot['Most Recent Positive per 100k'] = toplot['Positive per 100k'].where(toplot['Date'] == toplot['Date'].max()).apply(lambda x: f"{int(x):n}" if not pandas.isna(x) else "")
+                        heatmap2 = plot_heatmap(toplot,'X','Date','Date','Age_Band_5yr','Band Start','Age Band','Positive per 100k','Positive Tests (per 100k people)')
 
                         p = altair.vconcat(
                             altair.layer(
-                                heatmap,
+                                heatmap.properties(
+                                    height=450,
+                                    width=800,
+                                    title='NI COVID-19 Positive Tests by Age Band from %s to %s' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y')),
+                                ),
                                 heatmap.mark_text(
                                     align='right',
                                     baseline='middle',
                                     dx=43
                                 ).encode(
                                     text = altair.Text('Most Recent Positive Tests'),
+                                    color = altair.value('black')
+                                )
+                            ),
+                            altair.layer(
+                                heatmap2.properties(
+                                    height=450,
+                                    width=800,
+                                    title='NI COVID-19 Positive Tests by Age Band per 100k people',
+                                ),
+                                heatmap2.mark_text(
+                                    align='right',
+                                    baseline='middle',
+                                    dx=43
+                                ).encode(
+                                    text = altair.Text('Most Recent Positive per 100k'),
                                     color = altair.value('black')
                                 )
                             )
