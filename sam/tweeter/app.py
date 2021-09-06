@@ -239,29 +239,13 @@ def lambda_handler(event, context):
                         toplot = toplot.merge(bands, how='left', on='Age_Band_5yr')
                         toplot['Positive per 100k'] = (100000 * toplot['Positive_Tests']) / toplot['Population']
                         toplot['Most Recent Positive per 100k'] = toplot['Positive per 100k'].where(toplot['Date'] == toplot['Date'].max()).apply(lambda x: f"{int(x):n}" if not pandas.isna(x) else "")
-                        heatmap2 = plot_heatmap(toplot,'X','Date','Date','Age_Band_5yr','Band Start','Age Band','Positive per 100k','Positive Tests (per 100k people)')
-
+                        heatmap2 = plot_heatmap(toplot,'X','Date','Date','Age_Band_5yr','Band Start','Age Band','Positive per 100k','Positive Tests per 100k')
                         p = altair.vconcat(
-                            altair.layer(
-                                heatmap.properties(
-                                    height=450,
-                                    width=800,
-                                    title='NI COVID-19 Positive Tests by Age Band from %s to %s' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y')),
-                                ),
-                                heatmap.mark_text(
-                                    align='right',
-                                    baseline='middle',
-                                    dx=43
-                                ).encode(
-                                    text = altair.Text('Most Recent Positive Tests'),
-                                    color = altair.value('black')
-                                )
-                            ),
                             altair.layer(
                                 heatmap2.properties(
                                     height=450,
                                     width=800,
-                                    title='NI COVID-19 Positive Tests by Age Band per 100k people',
+                                    title='NI COVID-19 7-day Positive Tests by Age Band per 100k people (%s to %s)' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y')),
                                 ),
                                 heatmap2.mark_text(
                                     align='right',
@@ -275,7 +259,7 @@ def lambda_handler(event, context):
                         ).properties(
                             title=altair.TitleParams(
                                 ['Data from DoH daily downloads',
-                                'Numbers to right of chart show most recent 7 day total',
+                                'Numbers to right of chart show most recent value',
                                 'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().strftime('%A %-d %B %Y')],
                                 baseline='bottom',
                                 orient='bottom',
