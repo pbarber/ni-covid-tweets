@@ -202,14 +202,6 @@ def lambda_handler(event, context):
         datastore = pandas.concat([datastore, age_bands])
         # Send back to S3
         push_csv_to_s3(datastore, s3, secret['bucketname'], agebands_keyname)
-        # Have to insert an extra date to get the first date shown - just altair things
-        datastore = datastore.append(
-            {
-                'Date': datastore['Date'].min() + pandas.DateOffset(days=-1),
-                'Positive_Tests': 1,
-                'Age_Band_5yr': 'Not Known'
-            }, ignore_index=True)
-
         # Plot the case reports and 7-day average
         driver = get_chrome_driver()
         plots = []
@@ -223,34 +215,62 @@ def lambda_handler(event, context):
                 if len(plots) > 1:
                     p = plot_hospital_stats(adm_dis_7d, inpatients, icu, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'))
                     plots = output_plot(p, plots, driver, 'ni-hospitals-%s.png' % today_str)
-#                    if len(plots) > 2:
-#                        toplot = datastore[datastore['Date'] >= (datastore['Date'].max() + pandas.DateOffset(days=-42))]
-#                        ticks = 7
-#                        if len(toplot['Date'].unique()) < 7:
-#                            ticks = len(toplot['Date'].unique())
-#                        p = altair.vconcat(
-#                            altair.Chart(toplot).mark_rect().encode(
-#                                x = altair.X(field='Date', type='temporal', axis=altair.Axis(format='%e %b', tickCount=ticks)),
-#                                y = altair.Y(field='Age_Band_5yr', type='ordinal', sort=altair.SortField('Band Start'), title='Age Band'),
-#                                color = altair.Color(field='Positive_Tests', type='quantitative', title='Positive Tests (7 day total)')
-#                            ).properties(
-#                                height=450,
-#                                width=800,
-#                                title='NI COVID-19 Positive Tests by Age Band from %s to %s' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y'))
-#                            )
-#                        ).properties(
-#                            title=altair.TitleParams(
-#                                ['Data from DoH daily downloads',
-#                                'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().strftime('%A %-d %B %Y')],
-#                                baseline='bottom',
-#                                orient='bottom',
-#                                anchor='end',
-#                                fontWeight='normal',
-#                                fontSize=10,
-#                                dy=10
-#                            ),
-#                        )
-#                        plots = output_plot(p, plots, driver, 'ni-cases-age-bands-%s.png' % today_str)
+                    if len(plots) > 2:
+                        toplot = datastore[datastore['Date'] >= (datastore['Date'].max() + pandas.DateOffset(days=-42))]
+                        toplot['Band Start'] = toplot['Band Start'].fillna(90).astype(int)
+                        toplot = toplot.groupby(['Date','Age_Band_5yr','Band Start']).sum()['Positive_Tests'].reset_index()
+                        toplot['Date'] = pandas.to_datetime(toplot['Date'])
+                        toplot['Band Start'] = toplot['Band Start'].fillna(90).astype(int)
+                        toplot['Positive_Tests'] = toplot['Positive_Tests'].fillna(0).astype(int)
+                        toplot['X'] = toplot['Date'].dt.strftime('%e %b')
+                        ticks = 7
+                        if len(toplot['Date'].unique()) < 7:
+                            ticks = len(toplot['Date'].unique())
+                        p = altair.vconcat(
+                            altair.Chart(toplot).mark_rect().encode(
+                                x = altair.X(
+                                    field='X',
+                                    type='ordinal',
+                                    axis=altair.Axis(
+                                        tickCount=ticks
+                                    ),
+                                    sort=altair.SortField(
+                                        'Date'
+                                    ),
+                                    title='Date'
+                                ),
+                                y = altair.Y(
+                                    field='Age_Band_5yr',
+                                    type='ordinal',
+                                    sort=altair.SortField(
+                                        'Band Start'
+                                    ),
+                                    title='Age Band',
+                                ),
+                                color = altair.Color(
+                                    field='Positive_Tests',
+                                    type='quantitative',
+                                    aggregate='sum',
+                                    title='Positive Tests (7 day total)',
+                                )
+                            ).properties(
+                                height=450,
+                                width=800,
+                                title='NI COVID-19 Positive Tests by Age Band from %s to %s' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y'))
+                            )
+                        ).properties(
+                            title=altair.TitleParams(
+                                ['Data from DoH daily downloads',
+                                'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().strftime('%A %-d %B %Y')],
+                                baseline='bottom',
+                                orient='bottom',
+                                anchor='end',
+                                fontWeight='normal',
+                                fontSize=10,
+                                dy=10
+                            ),
+                        )
+                        plots = output_plot(p, plots, driver, 'ni-cases-age-bands-%s.png' % today_str)
 
         # Find the date since which the rate was as high/low
         symb_7d, est = find_previous(df, latest_7d, 'ROLLING 7 DAY POSITIVE TESTS')
