@@ -31,13 +31,27 @@ mobile_clinics_all = {
         'BT80', 'BT44', # NHSCT
         'BT35', 'BT61', 'BT71', # SHSCT
         'BT47', 'BT79', 'BT48', 'BT78', # WHSCT
-        ]
+        ],
+    '2021-09-05': [
+        'BT7','BT5','BT11', # BHSCT
+        'BT60','BT70','BT61','BT35','BT34', # SHSCT
+        'BT48','BT49','BT79','BT78','BT82', # WHSCT
+        'BT30','BT23','BT28', # SEHSCT
+        'BT56', # NHSCT
+        ],
+    '2021-09-12': [ # From https://www.nidirect.gov.uk/articles/get-covid-19-vaccination-northern-ireland
+        'BT9','BT6','BT11', # BHSCT
+        'BT22','BT21','BT28', 'BT22', 'BT16', # SEHSCT
+        'BT35','BT62', # SHSCT
+        'BT41','BT52','BT43','BT41','BT38', # NHSCT
+        'BT81','BT48','BT78', # WHSCT
+        ],
     }
-mobile_clinics = mobile_clinics_all['2021-08-28']
+mobile_clinics = mobile_clinics_all['2021-09-05']
 df = pandas.read_csv('postcodes.csv')
 
 # %%
-change = df[df['Date']=='2021-08-27'].merge(df[df['Date']=='2021-08-20'], how='inner', on='Postcode District', suffixes=('','_y'))
+change = df[df['Date']=='2021-09-03'].merge(df[df['Date']=='2021-08-27'], how='inner', on='Postcode District', suffixes=('','_y'))
 change['Change'] = change['Vaccinations']-change['Vaccinations_y']
 change.columns
 change = change[['Postcode District','Vaccinations','Population','Change','Potential vaccinations']]
@@ -74,7 +88,7 @@ for order, name in {'Potential vaccinations': 'potential vaccinations','Change':
     ).properties(
         title=altair.TitleParams(
             ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
-            'Mobile vaccination clinic locations for last week from BBC News NI',
+            'Mobile vaccination clinic locations for last week from nidirect',
             'https://twitter.com/ni_covid19_data on %s' %datetime.datetime.now().strftime('%A %-d %B %Y')],
             baseline='bottom',
             orient='bottom',
