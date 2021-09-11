@@ -39,101 +39,103 @@ def get_chrome_driver():
         logging.error('Failed to set up webdriver after %d attempts' %(attempt+1))
     return driver
 
-def points_average_and_trend(points, line, colour, date_col, x_title, y_title, scale='linear', width=800, height=450, x_type='temporal', colour_domain=[], colour_range=[], y_format=None):
-    if scale=='log':
-        y_title += ' (log scale)'
-        line_df = line[(~line.isna()) & (line != 0)].reset_index(name='line')
-    else:
-        line_df = line[~line.isna()].reset_index(name='line')
-    if y_format is None:
-        point_y_axis = altair.Axis(title='')
-        line_y_axis = altair.Axis(title=y_title)
-    else:
-        point_y_axis = altair.Axis(title='', format=y_format)
-        line_y_axis = altair.Axis(title=y_title, format=y_format)
-    encode_point_args = {
-        'x': altair.X(
-            field=date_col,
-            type=x_type,
-            axis=altair.Axis(title=x_title),
-        ),
-        'y': altair.Y(
-            field='points',
-            type='quantitative',
-            aggregate='sum',
-            axis=point_y_axis,
-            scale=altair.Scale(
-                type=scale
-            ),
-        ),
-    }
-    encode_line_args = {
-        'x': altair.X(
-            field=date_col,
-            type=x_type
-        ),
-        'y': altair.Y(
-            field='line',
-            type='quantitative',
-            aggregate='sum',
-            scale=altair.Scale(
-                type=scale
-            ),
-            axis=line_y_axis,
-        ),
-    }
-    mark_point_args = {
-        'opacity':0.7,
-        'filled':True,
-        'size':15,
-    }
-    mark_line_args = {
-    }
-    if colour in line_df.columns:
-        if len(colour_domain) == 0:
-            encode_point_args['color'] = colour
-            encode_line_args['color'] = colour
+def points_average_and_trend(points, line, colour, date_col, x_title, y_title, scales=['linear'], width=800, height=450, x_type='temporal', colour_domain=[], colour_range=[], y_format=None):
+    columns = []
+    for scale in scales:
+        if scale=='log':
+            y_title += ' (log scale)'
+            line_df = line[(~line.isna()) & (line != 0)].reset_index(name='line')
         else:
-            encode_point_args['color'] = altair.Color(
-                field=colour,
-                type='nominal',
+            line_df = line[~line.isna()].reset_index(name='line')
+        if y_format is None:
+            point_y_axis = altair.Axis(title='')
+            line_y_axis = altair.Axis(title=y_title)
+        else:
+            point_y_axis = altair.Axis(title='', format=y_format)
+            line_y_axis = altair.Axis(title=y_title, format=y_format)
+        encode_point_args = {
+            'x': altair.X(
+                field=date_col,
+                type=x_type,
+                axis=altair.Axis(title=x_title),
+            ),
+            'y': altair.Y(
+                field='points',
+                type='quantitative',
+                aggregate='sum',
+                axis=point_y_axis,
                 scale=altair.Scale(
-                    domain=colour_domain,
-                    range=colour_range
+                    type=scale
+                ),
+            ),
+        }
+        encode_line_args = {
+            'x': altair.X(
+                field=date_col,
+                type=x_type
+            ),
+            'y': altair.Y(
+                field='line',
+                type='quantitative',
+                aggregate='sum',
+                scale=altair.Scale(
+                    type=scale
+                ),
+                axis=line_y_axis,
+            ),
+        }
+        mark_point_args = {
+            'opacity':0.7,
+            'filled':True,
+            'size':15,
+        }
+        mark_line_args = {
+        }
+        if colour in line_df.columns:
+            if len(colour_domain) == 0:
+                encode_point_args['color'] = colour
+                encode_line_args['color'] = colour
+            else:
+                encode_point_args['color'] = altair.Color(
+                    field=colour,
+                    type='nominal',
+                    scale=altair.Scale(
+                        domain=colour_domain,
+                        range=colour_range
+                    )
+                )
+                encode_line_args['color'] = encode_point_args['color']
+        else:
+            mark_point_args['color'] = colour
+            mark_line_args['color'] = colour
+        charts = [
+            altair.Chart(
+                line_df
+            ).mark_line(
+                **mark_line_args
+            ).encode(
+                **encode_line_args
+            ).properties(
+                width=width,
+                height=height
+            ),
+        ]
+        if points is not None:
+            if scale=='log':
+                points_df = points[(~points.isna()) & (points != 0)].reset_index(name='points')
+            else:
+                points_df = points[~points.isna()].reset_index(name='points')
+            charts.append(
+                altair.Chart(
+                    points_df
+                ).mark_point(
+                    **mark_point_args
+                ).encode(
+                    **encode_point_args
                 )
             )
-            encode_line_args['color'] = encode_point_args['color']
-    else:
-        mark_point_args['color'] = colour
-        mark_line_args['color'] = colour
-    charts = [
-        altair.Chart(
-            line_df
-        ).mark_line(
-            **mark_line_args
-        ).encode(
-            **encode_line_args
-        ).properties(
-            width=width,
-            height=height
-        ),
-    ]
-    if points is not None:
-        if scale=='log':
-            points_df = points[(~points.isna()) & (points != 0)].reset_index(name='points')
-        else:
-            points_df = points[~points.isna()].reset_index(name='points')
-        charts.append(
-            altair.Chart(
-                points_df
-            ).mark_point(
-                **mark_point_args
-            ).encode(
-                **encode_point_args
-            )
-        )
-    return altair.layer(*charts
-    )
+        columns.append(altair.layer(*charts))
+    return altair.hconcat(*columns)
 
 def plot_points_average_and_trend(configs, title, footer):
     return altair.concat(
