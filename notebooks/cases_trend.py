@@ -285,7 +285,7 @@ plt = plot_points_average_and_trend(
     [
         {
             'points': None,
-            'line': df[(df['Date'] > (df['Date'].max()-pandas.to_timedelta(84, unit='d')))].set_index(['Date','Nation'])['Rolling tests per 100k'],
+            'line': df[(df['Date'] > (df['Date'].max()-pandas.to_timedelta(42, unit='d')))].set_index(['Date','Nation'])['Rolling tests per 100k'],
             'colour': 'Nation',
             'date_col': 'Date',
             'x_title': 'Specimen Date',
