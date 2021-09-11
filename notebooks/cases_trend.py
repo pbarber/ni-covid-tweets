@@ -183,6 +183,132 @@ nationpop = pandas.DataFrame([
     {'Nation': 'Wales', 'Population': 3169586},
 ])
 
+# %% Load data from PHE API and transform it to the right format
+def load_grouped_time_series(df, date_col, group_col, series_col, new_name, model=True):
+    df = df.pivot(index=date_col,columns=group_col,values=series_col)
+    newind = pandas.date_range(start=df.index.min(), end=df.index.max())
+    df = df.reindex(newind)
+    df = df.reset_index().melt(id_vars='index', var_name=group_col, value_name=series_col)
+    df = df.rename(columns={'index': 'Date'}).sort_values('Date')
+    df['%s 7-day rolling mean' %new_name] = df.groupby(group_col).rolling(7).mean().droplevel(0)
+    if model is True:
+        df = create_models(df, group_col, '%s 7-day rolling mean' %new_name)
+    return df
+
+# %%
+df = pandas.read_csv('https://coronavirus.data.gov.uk/api/v1/data?filters=areaType=nation&structure=%7B%22areaType%22:%22areaType%22,%22areaName%22:%22areaName%22,%22areaCode%22:%22areaCode%22,%22date%22:%22date%22,%22newCasesBySpecimenDate%22:%22newCasesBySpecimenDate%22,%22newPCRTestsByPublishDate%22:%22newPCRTestsByPublishDate%22%7D&format=csv')
+df.rename(columns={'areaName': 'Nation','date': 'Date'}, inplace=True)
+df['Date'] = pandas.to_datetime(df['Date'], format='%Y-%m-%d').dt.date
+new_cases = df.drop(columns=['areaType','areaCode','newPCRTestsByPublishDate'])
+new_cases = load_grouped_time_series(new_cases, 'Date', 'Nation', 'newCasesBySpecimenDate', 'New cases')
+new_tests = df.drop(columns=['areaType','areaCode','newCasesBySpecimenDate'])
+new_tests = load_grouped_time_series(new_tests, 'Date', 'Nation', 'newPCRTestsByPublishDate', 'New tests', model=False)
+df = new_cases.merge(new_tests, how='inner', on=['Date','Nation'])
+df = df.merge(nationpop, how='left', left_on='Nation', right_on='Nation', validate='m:1')
+df['Rolling cases per 100k'] = 100000 * (df['New cases 7-day rolling mean'] / df['Population'])
+df['Rolling tests per 100k'] = 100000 * (df['New tests 7-day rolling mean'] / df['Population'])
+df['New cases per 100k'] = 100000 * (df['newCasesBySpecimenDate'] / df['Population'])
+df = create_models(df, 'Nation', 'Rolling cases per 100k')
+df['Rolling 7-day Positivity Rate'] = df['New cases 7-day rolling mean'] / df['New tests 7-day rolling mean']
+
+# Load ROI data
+roi = pandas.read_csv('https://opendata.arcgis.com/api/v3/datasets/f6d6332820ca466999dbd852f6ad4d5a_0/downloads/data?format=csv&spatialRefId=4326')
+roi['Population'] = 5011500 # as in https://www.cso.ie/en/releasesandpublications/ep/p-pme/populationandmigrationestimatesapril2021/
+roi['Rolling cases per 100k'] = 100000 * (roi['Pos7'] / (7 * roi['Population']))
+roi['Rolling tests per 100k'] = 100000 * (roi['Test7'] / (7 * roi['Population']))
+roi['Nation'] = 'Ireland'
+roi['Date'] = roi['Date_HPSC'].str.slice(stop=10)
+roi['Date'] = pandas.to_datetime(roi['Date'], format='%Y/%m/%d')
+roi['Rolling 7-day Positivity Rate'] = roi['PosR7'] / 100
+df = pandas.concat([df,roi])
+
+# %%
+for scale in ['log','linear']:
+    plt = plot_points_average_and_trend(
+        [
+            {
+                'points': None,
+                'line': df[(df['Date'] > (df['Date'].max()-pandas.to_timedelta(42, unit='d')))].set_index(['Date','Nation'])['Rolling cases per 100k'],
+                'colour': 'Nation',
+                'date_col': 'Date',
+                'x_title': 'Specimen Date',
+                'y_title': 'New cases per 100k',
+                'scale': scale,
+                'colour_domain': ['England','Scotland','Wales','Northern Ireland','Ireland'],
+                'colour_range': ['grey','#005eb8','#D30731','#076543','#FF8200']
+            },
+        ],
+        '%s COVID-19 %s (7-day average, %s scale) reported on %s' %(
+            'UK and Ireland',
+            'cases per 100k people',
+            scale,
+            datetime.datetime.today().strftime('%A %-d %B %Y'),
+        ),
+        [
+            'UK cases data from PHE dashboard/API, Ireland from geohive.ie',
+            'Last two days likely to be revised upwards due to reporting delays',
+            'https://twitter.com/ni_covid19_data'
+        ]
+    )
+    plt.save('nations-cases-100k-%s-%s.png'%(scale,datetime.datetime.now().date().strftime('%Y-%m-%d')))
+
+plt = plot_points_average_and_trend(
+    [
+        {
+            'points': None,
+            'line': df[(df['Date'] > (df['Date'].max()-pandas.to_timedelta(42, unit='d')))].set_index(['Date','Nation'])['Rolling 7-day Positivity Rate'],
+            'colour': 'Nation',
+            'date_col': 'Date',
+            'x_title': 'Specimen Date',
+            'y_title': '7-day positivity rate',
+            'y_format': '%',
+            'scale': 'linear',
+            'colour_domain': ['England','Scotland','Wales','Northern Ireland','Ireland'],
+            'colour_range': ['grey','#005eb8','#D30731','#076543','#FF8200']
+        },
+    ],
+    '%s COVID-19 %s (7-day average, %s scale) reported on %s' %(
+        'UK and Ireland',
+        'test positivity rate',
+        'linear',
+        datetime.datetime.today().strftime('%A %-d %B %Y'),
+    ),
+    [
+        'UK cases data from PHE dashboard/API, Ireland from geohive.ie',
+        'Last two days likely to be revised upwards due to reporting delays',
+        'https://twitter.com/ni_covid19_data'
+    ]
+)
+plt.save('nations-pr-%s-%s.png'%(scale,datetime.datetime.now().date().strftime('%Y-%m-%d')))
+
+plt = plot_points_average_and_trend(
+    [
+        {
+            'points': None,
+            'line': df[(df['Date'] > (df['Date'].max()-pandas.to_timedelta(84, unit='d')))].set_index(['Date','Nation'])['Rolling tests per 100k'],
+            'colour': 'Nation',
+            'date_col': 'Date',
+            'x_title': 'Specimen Date',
+            'y_title': 'New tests per 100k',
+            'scale': 'linear',
+            'colour_domain': ['England','Scotland','Wales','Northern Ireland','Ireland'],
+            'colour_range': ['grey','#005eb8','#D30731','#076543','#FF8200']
+        },
+    ],
+    '%s COVID-19 %s (7-day average, %s scale) reported on %s' %(
+        'UK and Ireland',
+        'tests per 100k people',
+        'linear',
+        datetime.datetime.today().strftime('%A %-d %B %Y'),
+    ),
+    [
+        'UK cases data from PHE dashboard/API, Ireland from geohive.ie',
+        'Last two days likely to be revised upwards due to reporting delays',
+        'https://twitter.com/ni_covid19_data'
+    ]
+)
+plt.save('nations-tests-100k-%s-%s.png'%(scale,datetime.datetime.now().date().strftime('%Y-%m-%d')))
+
 # %% NISRA mid-year LGD population estimates
 nipop = pandas.DataFrame([
     {"Area": "Antrim and Newtownabbey","Population": 143504},
@@ -198,31 +324,6 @@ nipop = pandas.DataFrame([
     {"Area": "Newry, Mourne and Down","Population": 181368},
     {"Area": "Missing Postcode","Population": 0}
 ])
-
-# %% Load data from PHE API and transform it to the right format
-df = pandas.read_csv('https://coronavirus.data.gov.uk/api/v1/data?filters=areaType=nation&structure=%7B%22areaType%22:%22areaType%22,%22areaName%22:%22areaName%22,%22areaCode%22:%22areaCode%22,%22date%22:%22date%22,%22newCasesBySpecimenDate%22:%22newCasesBySpecimenDate%22,%22cumCasesBySpecimenDate%22:%22cumCasesBySpecimenDate%22%7D&format=csv')
-df.drop(columns=['areaType','areaCode','cumCasesBySpecimenDate'], inplace=True)
-df['date'] = pandas.to_datetime(df['date'], format='%Y-%m-%d').dt.date
-df = df.pivot(index='date',columns='areaName',values='newCasesBySpecimenDate')
-newind = pandas.date_range(start=df.index.min(), end=df.index.max())
-df = df.reindex(newind)
-df = df.reset_index().melt(id_vars='index', var_name='Nation', value_name='newCasesBySpecimenDate')
-df = df.rename(columns={'index': 'Date'}).sort_values('Date')
-df['New cases 7-day rolling mean'] = df.groupby('Nation').rolling(7).mean().droplevel(0)
-df = df.merge(nationpop, how='left', left_on='Nation', right_on='Nation', validate='m:1')
-df['Rolling cases per 100k'] = 100000 * (df['New cases 7-day rolling mean'] / df['Population'])
-df['New cases per 100k'] = 100000 * (df['newCasesBySpecimenDate'] / df['Population'])
-df = create_models(df, 'Nation', 'Rolling cases per 100k')
-df = create_models(df, 'Nation', 'newCasesBySpecimenDate')
-
-# %% Load ROI data
-roi = pandas.read_csv('https://opendata.arcgis.com/api/v3/datasets/f6d6332820ca466999dbd852f6ad4d5a_0/downloads/data?format=csv&spatialRefId=4326')
-roi['Population'] = 5011500 # as in https://www.cso.ie/en/releasesandpublications/ep/p-pme/populationandmigrationestimatesapril2021/
-roi['Rolling cases per 100k'] = 100000 * (roi['Pos7'] / (7 * roi['Population']))
-roi['Nation'] = 'Ireland'
-roi['Date'] = roi['Date_HPSC'].str.slice(stop=10)
-roi['Date'] = pandas.to_datetime(roi['Date'], format='%Y/%m/%d')
-df = pandas.concat([df,roi])
 
 # %% Load NI regional data
 ni = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-130821.xlsx', sheet_name='Tests')
@@ -625,36 +726,6 @@ plt = plot_multiple_trendlines(
 )
 plt.save('nations-daily-change-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
 plt
-
-# %%
-for scale in ['log','linear']:
-    plt = plot_points_average_and_trend(
-        [
-            {
-                'points': None,
-                'line': df[(df['Date'] > (df['Date'].max()-pandas.to_timedelta(42, unit='d')))].set_index(['Date','Nation'])['Rolling cases per 100k'],
-                'colour': 'Nation',
-                'date_col': 'Date',
-                'x_title': 'Specimen Date',
-                'y_title': 'New cases per 100k',
-                'scale': scale,
-                'colour_domain': ['England','Scotland','Wales','Northern Ireland','Ireland'],
-                'colour_range': ['grey','#005eb8','#D30731','#076543','#FF8200']
-            },
-        ],
-        '%s COVID-19 %s (7-day average, %s scale) reported on %s' %(
-            'UK and Ireland',
-            'cases per 100k people',
-            scale,
-            datetime.datetime.today().strftime('%A %-d %B %Y'),
-        ),
-        [
-            'UK cases data from PHE dashboard/API, Ireland from geohive.ie',
-            'Last two days likely to be revised upwards due to reporting delays',
-            'https://twitter.com/ni_covid19_data'
-        ]
-    )
-    plt.save('nations-cases-100k-%s-%s.png'%(scale,datetime.datetime.now().date().strftime('%Y-%m-%d')))
 
 # %% All data
 plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2020-03-18','%Y-%m-%d'), datetime.datetime.strptime('2021-07-23','%Y-%m-%d'), 'linear')
