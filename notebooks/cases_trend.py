@@ -404,7 +404,7 @@ def plot_hospital_stats(adm_dis_7d, inpatients, start_date, scale='linear'):
                 'date_col': 'Date',
                 'x_title': 'Date',
                 'y_title': 'Number of people',
-                'scale': scale
+                'scales': [scale]
             },
             {
                 'points': None,
@@ -413,7 +413,7 @@ def plot_hospital_stats(adm_dis_7d, inpatients, start_date, scale='linear'):
                 'date_col': 'Date',
                 'x_title': 'Date',
                 'y_title': 'Inpatients',
-                'scale': scale
+                'scales': [scale]
             },
         ],
         '%s COVID-19 %s (7-day average, %s scale) reported on %s' %(
@@ -758,20 +758,20 @@ plt.save('nations-daily-change-%s.png'%datetime.datetime.now().date().strftime('
 plt
 
 # %% All data
-plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2020-03-18','%Y-%m-%d'), datetime.datetime.strptime('2021-07-23','%Y-%m-%d'), 'linear')
+plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2020-03-18','%Y-%m-%d'), datetime.datetime.strptime('2021-07-23','%Y-%m-%d'), ['linear'])
 
 # %% First wave
 # Note how the cases peak is behind the admissions peak as testing ramps up
 # The deaths peak is around 21 days after the admissions peak
-plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2020-03-18','%Y-%m-%d'), datetime.datetime.strptime('2020-05-31','%Y-%m-%d'), 'linear')
+plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2020-03-18','%Y-%m-%d'), datetime.datetime.strptime('2020-05-31','%Y-%m-%d'), ['linear'])
 
 # %% Winter 2020 peak
 # Admissions peak is 10 days after the cases peak
 # Deaths peak is 9 days after the admissions peak
-plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2020-12-01','%Y-%m-%d'), datetime.datetime.strptime('2021-03-01','%Y-%m-%d'), 'linear')
+plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2020-12-01','%Y-%m-%d'), datetime.datetime.strptime('2021-03-01','%Y-%m-%d'), ['linear'])
 
 # %% Summer 2021 growth
-plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2021-06-01','%Y-%m-%d'), datetime.datetime.strptime('2021-07-23','%Y-%m-%d'), 'linear')
+plot_key_ni_stats_date_range(ni.rename(columns={'Date': 'Sample_Date', 'Individ with Positive Lab Test': 'INDIVIDUALS TESTED POSITIVE'}), admissions, deaths, datetime.datetime.strptime('2021-06-01','%Y-%m-%d'), datetime.datetime.strptime('2021-07-23','%Y-%m-%d'), ['linear'])
 
 # %%
 waves = pandas.DataFrame()
@@ -815,7 +815,7 @@ plot_points_average_and_trend(
             'date_col': 'Days from start',
             'x_title': 'Days from start of wave',
             'y_title': 'New cases',
-            'scale': 'linear',
+            'scales': ['linear'],
             'height': 225,
             'x_type': 'ordinal'
         },
@@ -826,7 +826,7 @@ plot_points_average_and_trend(
             'date_col': 'Days from start',
             'x_title': 'Days from start of wave',
             'y_title': 'Hospital admissions',
-            'scale': 'linear',
+            'scales': ['linear'],
             'height': 225,
             'x_type': 'ordinal'
         },
@@ -837,7 +837,7 @@ plot_points_average_and_trend(
             'date_col': 'Days from start',
             'x_title': 'Days from start of wave',
             'y_title': 'Deaths within 28 days of positive test',
-            'scale': 'linear',
+            'scales': ['linear'],
             'height': 225,
             'x_type': 'ordinal'
         },
