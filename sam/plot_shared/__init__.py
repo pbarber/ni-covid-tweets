@@ -163,7 +163,7 @@ def plot_points_average_and_trend(configs, title, footer):
         )
     )
 
-def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, scale):
+def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, scales):
     return plot_points_average_and_trend(
         [
             {
@@ -173,8 +173,9 @@ def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, s
                 'date_col': 'Sample_Date',
                 'x_title': 'Specimen Date',
                 'y_title': 'New cases',
-                'scale': scale,
-                'height': 225
+                'scales': scales,
+                'width': 800 / len(scales),
+                'height': 225,
             },
             {
                 'points': admissions[(admissions['Admission Date'] >= start_date) & (admissions['Admission Date'] <= end_date)].set_index('Admission Date')['Number of Admissions'],
@@ -183,8 +184,9 @@ def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, s
                 'date_col': 'Admission Date',
                 'x_title': 'Date of Admission',
                 'y_title': 'Hospital admissions',
-                'scale': scale,
-                'height': 225
+                'scales': scales,
+                'width': 800 / len(scales),
+                'height': 225,
             },
             {
                 'points': deaths[(deaths['Date of Death'] >= start_date) & (deaths['Date of Death'] <= end_date)].set_index('Date of Death')['Number of Deaths'],
@@ -193,8 +195,9 @@ def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, s
                 'date_col': 'Date of Death',
                 'x_title': 'Date of Death',
                 'y_title': 'Deaths within 28 days of positive test',
-                'scale': scale,
-                'height': 225
+                'scales': scales,
+                'width': 800 / len(scales),
+                'height': 225,
             },
         ],
         '%s COVID-19 %s between %s and %s' %(
@@ -205,6 +208,7 @@ def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, s
         ),
         [
             'Dots show daily reports, line is 7-day rolling average',
+            'Use linear scale (left) to compare values and log scale (right) to compare rate of change',
             'Cases, admissions and deaths data from DoH daily data',
             'Last two days likely to be revised upwards due to reporting delays',
             'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
