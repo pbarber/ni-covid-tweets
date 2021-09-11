@@ -75,6 +75,53 @@ def load_ni_time_series(url, sheet_name, date_col, series_col, model=False, filt
         df = create_model(df, '%s 7-day rolling mean' %series_col, date_col)
     return df
 
+def plot_test_stats(df, start_date, scale='linear'):
+    return plot_points_average_and_trend(
+        [
+            {
+                'points': df[(df['Sample_Date'] > start_date)].set_index(['Sample_Date'])['INDIVIDUALS TESTED POSITIVE'],
+                'line': df[(df['Sample_Date'] > start_date)].set_index(['Sample_Date'])['New cases 7-day rolling mean'],
+                'colour': '#076543',
+                'date_col': 'Sample_Date',
+                'x_title': 'Specimen Date',
+                'y_title': 'New cases',
+                'scales': [scale],
+                'height': 225
+            },
+            {
+                'points': df[(df['Sample_Date'] > start_date)].set_index(['Sample_Date'])['pos_rate'],
+                'line': df[(df['Sample_Date'] > start_date)].set_index(['Sample_Date'])['rolling_pos_rate'],
+                'colour': '#076543',
+                'date_col': 'Sample_Date',
+                'x_title': 'Specimen Date',
+                'y_title': 'Positivity rate',
+                'y_format': '%',
+                'scales': [scale],
+                'height': 225
+            },
+            {
+                'points': df[(df['Sample_Date'] > start_date)].set_index('Sample_Date')['ALL INDIVIDUALS TESTED'],
+                'line': df[(df['Sample_Date'] > start_date)].set_index('Sample_Date')['ROLLING 7 DAY INDIVIDUALS TESTED'],
+                'colour': '#076543',
+                'date_col': 'Sample_Date',
+                'x_title': 'Specimen Date',
+                'y_title': 'Tests',
+                'scales': [scale],
+                'height': 225
+            },
+        ],
+        '%s COVID-19 %s reported on %s' %(
+            'NI',
+            'testing statistics',
+            datetime.datetime.today().strftime('%A %-d %B %Y'),
+        ),
+        [
+            'All data from DoH daily data',
+            'Last two days may be revised upwards due to reporting delays',
+            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+        ]
+    )
+
 def plot_hospital_stats(adm_dis_7d, inpatients, icu, start_date, scale='linear'):
     return plot_points_average_and_trend(
         [
@@ -85,7 +132,7 @@ def plot_hospital_stats(adm_dis_7d, inpatients, icu, start_date, scale='linear')
                 'date_col': 'Date',
                 'x_title': 'Date',
                 'y_title': 'Number of people (7-day average)',
-                'scale': scale,
+                'scales': [scale],
                 'height': 225
             },
             {
@@ -95,7 +142,7 @@ def plot_hospital_stats(adm_dis_7d, inpatients, icu, start_date, scale='linear')
                 'date_col': 'Date',
                 'x_title': 'Date',
                 'y_title': 'Inpatients (with confirmed COVID-19)',
-                'scale': scale,
+                'scales': [scale],
                 'height': 225
             },
             {
@@ -105,7 +152,7 @@ def plot_hospital_stats(adm_dis_7d, inpatients, icu, start_date, scale='linear')
                 'date_col': 'Date',
                 'x_title': 'Date',
                 'y_title': 'ICU Beds COVID Occupied',
-                'scale': scale,
+                'scales': [scale],
                 'height': 225
             },
         ],
@@ -197,79 +244,80 @@ def lambda_handler(event, context):
         datastore = get_s3_csv_or_empty_df(s3, secret['bucketname'], agebands_keyname, ['Date'])
         # Remove any data already recorded for the current day
         datastore['Date'] = pandas.to_datetime(datastore['Date'])
-        datastore = datastore[datastore['Date'] != df['Sample_Date'].max()]
-        # Append the new data
-        datastore = pandas.concat([datastore, age_bands])
-        # Send back to S3
-        push_csv_to_s3(datastore, s3, secret['bucketname'], agebands_keyname)
+        if (change.get('notweet', False) is False) and (change.get('tweet', True) is True):
+            datastore = datastore[datastore['Date'] != df['Sample_Date'].max()]
+            # Append the new data
+            datastore = pandas.concat([datastore, age_bands])
+            # Send back to S3, if we are in tweet mode
+            push_csv_to_s3(datastore, s3, secret['bucketname'], agebands_keyname)
         # Plot the case reports and 7-day average
         driver = get_chrome_driver()
         plots = []
         if driver is not None:
             today_str = datetime.datetime.now().date().strftime('%Y-%m-%d')
-            p = plot_key_ni_stats_date_range(df, admissions, deaths, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'), latest['Sample_Date'], 'linear')
-            plots = output_plot(p, plots, driver, 'ni-cases-linear-%s.png' % today_str)
+            p = plot_key_ni_stats_date_range(df, admissions, deaths, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'), latest['Sample_Date'], ['linear','log'])
+            plots = output_plot(p, plots, driver, 'ni-cases-%s.png' % today_str)
             if len(plots) > 0:
-                p = plot_key_ni_stats_date_range(df, admissions, deaths, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'), latest['Sample_Date'], 'log')
-                plots = output_plot(p, plots, driver, 'ni-cases-log-%s.png' % today_str)
+                p = plot_hospital_stats(adm_dis_7d, inpatients, icu, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'))
+                plots = output_plot(p, plots, driver, 'ni-hospitals-%s.png' % today_str)
                 if len(plots) > 1:
-                    p = plot_hospital_stats(adm_dis_7d, inpatients, icu, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'))
-                    plots = output_plot(p, plots, driver, 'ni-hospitals-%s.png' % today_str)
-                    if len(plots) > 2:
-                        toplot = datastore[datastore['Date'] >= (datastore['Date'].max() + pandas.DateOffset(days=-42))]
-                        toplot['Date'] = pandas.to_datetime(toplot['Date'])
-                        newind = pandas.date_range(start=toplot['Date'].max() + pandas.DateOffset(days=-42), end=toplot['Date'].max())
-                        alldates = pandas.Series(newind)
-                        alldates.name = 'Date'
-                        toplot = toplot.merge(alldates, how='outer', left_on='Date', right_on='Date')
-                        toplot['X'] = toplot['Date'].dt.strftime('%e %b')
-                        toplot['Most Recent Positive Tests'] = toplot['Positive_Tests'].where(toplot['Date'] == toplot['Date'].max()).apply(lambda x: f"{x:n}" if not pandas.isna(x) else "")
-                        toplot['Age_Band_5yr'].fillna('Not Known', inplace=True)
-                        bands = toplot.groupby(['Age_Band_5yr','Band Start','Band End'], dropna=False).size().reset_index()[['Age_Band_5yr','Band Start','Band End']]
-                        bands = bands[bands['Age_Band_5yr']!='Not Known']
-                        bands.fillna(90, inplace=True)
-                        bands['Band End'] = bands['Band End'].astype(int)
-                        bands['Band Start'] = bands['Band Start'].astype(int)
-                        bands['Year'] = bands.apply(lambda x: range(x['Band Start'], x['Band End']+1), axis='columns')
-                        bands = bands.explode('Year').reset_index()
-                        pops = get_ni_pop_pyramid()
-                        pops = pops[pops['Year']==2020].groupby(['Age Band']).sum()['Population']
-                        bands = bands.merge(pops, how='inner', validate='1:1', right_index=True, left_on='Year')
-                        bands = bands.groupby('Age_Band_5yr').sum()['Population']
-                        toplot = toplot.merge(bands, how='left', on='Age_Band_5yr')
-                        toplot['Positive per 100k'] = (100000 * toplot['Positive_Tests']) / toplot['Population']
-                        toplot['Most Recent Positive per 100k'] = toplot['Positive per 100k'].where(toplot['Date'] == toplot['Date'].max()).apply(lambda x: f"{int(x):n}" if not pandas.isna(x) else "")
-                        heatmap2 = plot_heatmap(toplot,'X','Date','Date','Age_Band_5yr','Band Start','Age Band','Positive per 100k','Positive Tests per 100k')
-                        p = altair.vconcat(
-                            altair.layer(
-                                heatmap2.properties(
-                                    height=450,
-                                    width=800,
-                                    title='NI COVID-19 7-day Positive Tests by Age Band per 100k people (%s to %s)' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y')),
-                                ),
-                                heatmap2.mark_text(
-                                    align='right',
-                                    baseline='middle',
-                                    dx=43
-                                ).encode(
-                                    text = altair.Text('Most Recent Positive per 100k'),
-                                    color = altair.value('black')
-                                )
-                            )
-                        ).properties(
-                            title=altair.TitleParams(
-                                ['Data from DoH daily downloads',
-                                'Numbers to right of chart show most recent value',
-                                'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().strftime('%A %-d %B %Y')],
-                                baseline='bottom',
-                                orient='bottom',
-                                anchor='end',
-                                fontWeight='normal',
-                                fontSize=10,
-                                dy=10
+                    toplot = datastore[datastore['Date'] >= (datastore['Date'].max() + pandas.DateOffset(days=-42))]
+                    toplot['Date'] = pandas.to_datetime(toplot['Date'])
+                    newind = pandas.date_range(start=toplot['Date'].max() + pandas.DateOffset(days=-42), end=toplot['Date'].max())
+                    alldates = pandas.Series(newind)
+                    alldates.name = 'Date'
+                    toplot = toplot.merge(alldates, how='outer', left_on='Date', right_on='Date')
+                    toplot['X'] = toplot['Date'].dt.strftime('%e %b')
+                    toplot['Most Recent Positive Tests'] = toplot['Positive_Tests'].where(toplot['Date'] == toplot['Date'].max()).apply(lambda x: f"{x:n}" if not pandas.isna(x) else "")
+                    toplot['Age_Band_5yr'].fillna('Not Known', inplace=True)
+                    bands = toplot.groupby(['Age_Band_5yr','Band Start','Band End'], dropna=False).size().reset_index()[['Age_Band_5yr','Band Start','Band End']]
+                    bands = bands[bands['Age_Band_5yr']!='Not Known']
+                    bands.fillna(90, inplace=True)
+                    bands['Band End'] = bands['Band End'].astype(int)
+                    bands['Band Start'] = bands['Band Start'].astype(int)
+                    bands['Year'] = bands.apply(lambda x: range(x['Band Start'], x['Band End']+1), axis='columns')
+                    bands = bands.explode('Year').reset_index()
+                    pops = get_ni_pop_pyramid()
+                    pops = pops[pops['Year']==2020].groupby(['Age Band']).sum()['Population']
+                    bands = bands.merge(pops, how='inner', validate='1:1', right_index=True, left_on='Year')
+                    bands = bands.groupby('Age_Band_5yr').sum()['Population']
+                    toplot = toplot.merge(bands, how='left', on='Age_Band_5yr')
+                    toplot['Positive per 100k'] = (100000 * toplot['Positive_Tests']) / toplot['Population']
+                    toplot['Most Recent Positive per 100k'] = toplot['Positive per 100k'].where(toplot['Date'] == toplot['Date'].max()).apply(lambda x: f"{int(x):n}" if not pandas.isna(x) else "")
+                    heatmap2 = plot_heatmap(toplot,'X','Date','Date','Age_Band_5yr','Band Start','Age Band','Positive per 100k','Positive Tests per 100k')
+                    p = altair.vconcat(
+                        altair.layer(
+                            heatmap2.properties(
+                                height=450,
+                                width=800,
+                                title='NI COVID-19 7-day Positive Tests by Age Band per 100k people (%s to %s)' %(toplot['Date'].min().strftime('%-d %B %Y'),toplot['Date'].max().strftime('%-d %B %Y')),
                             ),
+                            heatmap2.mark_text(
+                                align='right',
+                                baseline='middle',
+                                dx=43
+                            ).encode(
+                                text = altair.Text('Most Recent Positive per 100k'),
+                                color = altair.value('black')
+                            )
                         )
-                        plots = output_plot(p, plots, driver, 'ni-cases-age-bands-%s.png' % today_str)
+                    ).properties(
+                        title=altair.TitleParams(
+                            ['Data from DoH daily downloads',
+                            'Numbers to right of chart show most recent value',
+                            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().strftime('%A %-d %B %Y')],
+                            baseline='bottom',
+                            orient='bottom',
+                            anchor='end',
+                            fontWeight='normal',
+                            fontSize=10,
+                            dy=10
+                        ),
+                    )
+                    plots = output_plot(p, plots, driver, 'ni-cases-age-bands-%s.png' % today_str)
+                    if len(plots) > 2:
+                        p = plot_test_stats(df, latest['Sample_Date'] - pandas.to_timedelta(42, unit='d'))
+                        plots = output_plot(p, plots, driver, 'ni-tests-%s.png' % today_str)
 
         # Find the date since which the rate was as high/low
         symb_7d, est = find_previous(df, latest_7d, 'ROLLING 7 DAY POSITIVE TESTS')
