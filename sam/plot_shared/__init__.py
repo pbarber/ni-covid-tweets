@@ -39,12 +39,18 @@ def get_chrome_driver():
         logging.error('Failed to set up webdriver after %d attempts' %(attempt+1))
     return driver
 
-def points_average_and_trend(points, line, colour, date_col, x_title, y_title, scale='linear', width=800, height=450, x_type='temporal', colour_domain=[], colour_range=[]):
+def points_average_and_trend(points, line, colour, date_col, x_title, y_title, scale='linear', width=800, height=450, x_type='temporal', colour_domain=[], colour_range=[], y_format=None):
     if scale=='log':
         y_title += ' (log scale)'
         line_df = line[(~line.isna()) & (line != 0)].reset_index(name='line')
     else:
         line_df = line[~line.isna()].reset_index(name='line')
+    if y_format is None:
+        point_y_axis = altair.Axis(title='')
+        line_y_axis = altair.Axis(title=y_title)
+    else:
+        point_y_axis = altair.Axis(title='', format=y_format)
+        line_y_axis = altair.Axis(title=y_title, format=y_format)
     encode_point_args = {
         'x': altair.X(
             field=date_col,
@@ -55,7 +61,7 @@ def points_average_and_trend(points, line, colour, date_col, x_title, y_title, s
             field='points',
             type='quantitative',
             aggregate='sum',
-            axis=altair.Axis(title=''),
+            axis=point_y_axis,
             scale=altair.Scale(
                 type=scale
             ),
@@ -73,7 +79,7 @@ def points_average_and_trend(points, line, colour, date_col, x_title, y_title, s
             scale=altair.Scale(
                 type=scale
             ),
-            axis=altair.Axis(title=y_title),
+            axis=line_y_axis,
         ),
     }
     mark_point_args = {
