@@ -196,17 +196,22 @@ def load_grouped_time_series(df, date_col, group_col, series_col, new_name, mode
     return df
 
 # %%
-df = pandas.read_csv('https://coronavirus.data.gov.uk/api/v1/data?filters=areaType=nation&structure=%7B%22areaType%22:%22areaType%22,%22areaName%22:%22areaName%22,%22areaCode%22:%22areaCode%22,%22date%22:%22date%22,%22newCasesBySpecimenDate%22:%22newCasesBySpecimenDate%22,%22newPCRTestsByPublishDate%22:%22newPCRTestsByPublishDate%22%7D&format=csv')
+df = pandas.read_csv('https://api.coronavirus.data.gov.uk/v2/data?areaType=nation&metric=newAdmissions&metric=newCasesBySpecimenDate&metric=newDeaths28DaysByPublishDate&metric=newPCRTestsByPublishDate&format=csv')
 df.rename(columns={'areaName': 'Nation','date': 'Date'}, inplace=True)
 df['Date'] = pandas.to_datetime(df['Date'], format='%Y-%m-%d').dt.date
-new_cases = df.drop(columns=['areaType','areaCode','newPCRTestsByPublishDate'])
-new_cases = load_grouped_time_series(new_cases, 'Date', 'Nation', 'newCasesBySpecimenDate', 'New cases')
-new_tests = df.drop(columns=['areaType','areaCode','newCasesBySpecimenDate'])
-new_tests = load_grouped_time_series(new_tests, 'Date', 'Nation', 'newPCRTestsByPublishDate', 'New tests', model=False)
-df = new_cases.merge(new_tests, how='inner', on=['Date','Nation'])
+df.drop(columns=['areaType','areaCode'], inplace=True)
+new_cases = load_grouped_time_series(df, 'Date', 'Nation', 'newCasesBySpecimenDate', 'New cases')
+new_tests = load_grouped_time_series(df, 'Date', 'Nation', 'newPCRTestsByPublishDate', 'New tests', model=False)
+new_admissions = load_grouped_time_series(df, 'Date', 'Nation', 'newAdmissions', 'New admissions', model=False)
+new_deaths = load_grouped_time_series(df, 'Date', 'Nation', 'newDeaths28DaysByPublishDate', 'New deaths', model=False)
+df = new_cases.merge(new_tests, how='left', on=['Date','Nation'])
+df = df.merge(new_admissions, how='left', on=['Date','Nation'])
+df = df.merge(new_deaths, how='left', on=['Date','Nation'])
 df = df.merge(nationpop, how='left', left_on='Nation', right_on='Nation', validate='m:1')
 df['Rolling cases per 100k'] = 100000 * (df['New cases 7-day rolling mean'] / df['Population'])
 df['Rolling tests per 100k'] = 100000 * (df['New tests 7-day rolling mean'] / df['Population'])
+df['Rolling admissions per 100k'] = 100000 * (df['New admissions 7-day rolling mean'] / df['Population'])
+df['Rolling deaths per 100k'] = 100000 * (df['New deaths 7-day rolling mean'] / df['Population'])
 df['New cases per 100k'] = 100000 * (df['newCasesBySpecimenDate'] / df['Population'])
 df = create_models(df, 'Nation', 'Rolling cases per 100k')
 df['Rolling 7-day Positivity Rate'] = df['New cases 7-day rolling mean'] / df['New tests 7-day rolling mean']
@@ -220,7 +225,15 @@ roi['Nation'] = 'Ireland'
 roi['Date'] = roi['Date_HPSC'].str.slice(stop=10)
 roi['Date'] = pandas.to_datetime(roi['Date'], format='%Y/%m/%d')
 roi['Rolling 7-day Positivity Rate'] = roi['PosR7'] / 100
-df = pandas.concat([df,roi])
+roi_deaths = pandas.read_csv('https://opendata.arcgis.com/api/v3/datasets/d8eb52d56273413b84b0187a4e9117be_0/downloads/data?format=csv&spatialRefId=4326')
+roi_deaths['Population'] = 5011500 # as in https://www.cso.ie/en/releasesandpublications/ep/p-pme/populationandmigrationestimatesapril2021/
+roi_deaths['Date'] = roi_deaths['Date'].str.slice(stop=10)
+roi_deaths['Date'] = pandas.to_datetime(roi_deaths['Date'], format='%Y/%m/%d')
+roi_deaths['ConfirmedCovidDeaths'] = roi_deaths['ConfirmedCovidDeaths'].fillna(0)
+roi_deaths['New deaths 7-day rolling mean'] = roi_deaths['ConfirmedCovidDeaths'].rolling(7).sum()
+roi_deaths['Rolling deaths per 100k'] = 100000 * (roi_deaths['New deaths 7-day rolling mean'] / roi_deaths['Population'])
+#roi = roi.merge(roi_deaths[['Date','Rolling deaths per 100k']], how='left', on='Date')
+#df = pandas.concat([df,roi])
 
 # %%
 plt = plot_points_average_and_trend(
@@ -235,17 +248,43 @@ plt = plot_points_average_and_trend(
             'scales': ['linear','log'],
             'colour_domain': ['England','Scotland','Wales','Northern Ireland','Ireland'],
             'colour_range': ['grey','#005eb8','#D30731','#076543','#FF8200'],
-            'height': 450,
+            'height': 225,
+            'width': 400,
+        },
+        {
+            'points': None,
+            'line': df[(df['Date'] > (df['Date'].max()-pandas.to_timedelta(42, unit='d')))].set_index(['Date','Nation'])['Rolling admissions per 100k'],
+            'colour': 'Nation',
+            'date_col': 'Date',
+            'x_title': 'Date',
+            'y_title': 'New admissions per 100k',
+            'scales': ['linear','log'],
+            'colour_domain': ['England','Scotland','Wales','Northern Ireland','Ireland'],
+            'colour_range': ['grey','#005eb8','#D30731','#076543','#FF8200'],
+            'height': 225,
+            'width': 400,
+        },
+        {
+            'points': None,
+            'line': df[(df['Date'] > (df['Date'].max()-pandas.to_timedelta(42, unit='d')))].set_index(['Date','Nation'])['Rolling deaths per 100k'],
+            'colour': 'Nation',
+            'date_col': 'Date',
+            'x_title': 'Date',
+            'y_title': 'New deaths per 100k',
+            'scales': ['linear','log'],
+            'colour_domain': ['England','Scotland','Wales','Northern Ireland','Ireland'],
+            'colour_range': ['grey','#005eb8','#D30731','#076543','#FF8200'],
+            'height': 225,
             'width': 400,
         },
     ],
     '%s COVID-19 %s (7-day average) reported on %s' %(
         'UK and Ireland',
-        'cases per 100k people',
+        'cases/admissions/deaths per 100k people',
         datetime.datetime.today().strftime('%A %-d %B %Y'),
     ),
     [
-        'UK cases data from PHE dashboard/API, Ireland from geohive.ie',
+        'UK data from PHE dashboard/API, Ireland from geohive.ie',
         'Last two days likely to be revised upwards due to reporting delays',
         'Use linear scale (left) to compare values and log scale (right) to compare rate of change',
         'https://twitter.com/ni_covid19_data'
