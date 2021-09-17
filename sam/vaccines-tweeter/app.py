@@ -216,7 +216,7 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir):
         ]
     headers = [item for item in items if ('-' in item) or ('+' in item)]
     cells = [item for item in items if ('-' not in item) and ('+' not in item) and ('%' not in item)]
-    df = pandas.DataFrame({'Age Band': headers, 'First Doses': cells[:len(headers)], 'Second Doses': cells[len(headers):]})
+    df = pandas.DataFrame({'Age Band': headers, 'First Doses': cells[len(headers):len(headers)*2], 'Second Doses': cells[len(headers)*2:]})
     df['First Doses'] = df['First Doses'].str.replace(',','').astype(int)
     df['Second Doses'] = df['Second Doses'].str.replace(',','').astype(int)
     ni = ni.merge(df, how='left', on='Age Band').drop(columns='First Doses')
