@@ -188,6 +188,7 @@ def load_grouped_time_series(df, date_col, group_col, series_col, new_name, mode
     df = df.pivot(index=date_col,columns=group_col,values=series_col)
     newind = pandas.date_range(start=df.index.min(), end=df.index.max())
     df = df.reindex(newind)
+    df.fillna(0, inplace=True)
     df = df.reset_index().melt(id_vars='index', var_name=group_col, value_name=series_col)
     df = df.rename(columns={'index': 'Date'}).sort_values('Date')
     df['%s 7-day rolling mean' %new_name] = df.groupby(group_col).rolling(7).mean().droplevel(0)
