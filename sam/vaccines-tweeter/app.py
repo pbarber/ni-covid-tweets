@@ -216,9 +216,10 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir):
         ]
     headers = [item for item in items if ('-' in item) or ('+' in item)]
     cells = [item for item in items if ('-' not in item) and ('+' not in item) and ('%' not in item)]
-    df = pandas.DataFrame({'Age Band': headers, 'First Doses': cells[len(headers):len(headers)*2], 'Second Doses': cells[len(headers)*2:]})
+    df = pandas.DataFrame({'Age Band': headers, 'First Doses': cells[len(headers):len(headers)*2], 'Second Doses': cells[len(headers)*2:], 'Booster Doses': cells[0:len(headers)]})
     df['First Doses'] = df['First Doses'].str.replace(',','').astype(int)
     df['Second Doses'] = df['Second Doses'].str.replace(',','').astype(int)
+    df['Booster Doses'] = df['Booster Doses'].str.replace(r'^\s*$','0').str.replace(',','').astype(int)
     ni = ni.merge(df, how='left', on='Age Band').drop(columns='First Doses')
     ni.rename(columns={'Total': 'First Doses'}, inplace=True)
     # Combine into age bands
@@ -236,7 +237,7 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir):
     # Combine with the comparable population data
     ni = ni.groupby(['Band']).sum()[['First Doses','Second Doses']].reset_index()
     ni = ni.merge(pop, how='right', on='Band', validate='1:1')
-    ni = ni[['Band', 'Order', 'First Doses', 'Second Doses', 'Population', '% of total population']]
+    ni = ni[['Band', 'Order', 'First Doses', 'Second Doses', 'Booster Doses', 'Population', '% of total population']]
     ni['Nation'] = 'Northern Ireland'
     return ni, ni_as_reported
 
