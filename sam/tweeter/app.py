@@ -164,7 +164,7 @@ def plot_hospital_stats(adm_dis_7d, inpatients, icu, start_date, scale='linear')
         ),
         [
             'Hospital data from DoH daily data',
-            'Last two days may be revised upwards due to reporting delays',
+            'Last two days (five for admissions) may be revised upwards',
             'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
         ]
     )

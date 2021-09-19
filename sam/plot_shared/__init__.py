@@ -210,7 +210,7 @@ def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, s
             'Dots show daily reports, line is 7-day rolling average',
             'Use linear scale (left) to compare values and log scale (right) to compare rate of change',
             'Cases, admissions and deaths data from DoH daily data',
-            'Last two days likely to be revised upwards due to reporting delays',
+            'Last two days (five for admissions) may be revised upwards',
             'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
         ],
     )
