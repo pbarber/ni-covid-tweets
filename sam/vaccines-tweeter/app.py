@@ -537,7 +537,7 @@ def make_postcode_plots(driver, df, plots, today, last_updated):
     ).properties(
         title=altair.TitleParams(
             ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
-            'Potential vaccinations metric is based on number of adults 20 and over',
+            'Potential vaccinations is an estimate of how many doses to fully vaccinate all over 20s',
             'https://twitter.com/ni_covid19_data on %s'  %today.strftime('%A %-d %B %Y')],
             baseline='bottom',
             orient='bottom',
