@@ -216,7 +216,12 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir):
         ]
     headers = [item for item in items if ('-' in item) or ('+' in item)]
     cells = [item for item in items if ('-' not in item) and ('+' not in item) and ('%' not in item)]
-    df = pandas.DataFrame({'Age Band': headers, 'First Doses': cells[len(headers):len(headers)*2], 'Second Doses': cells[len(headers)*2:], 'Booster Doses': cells[0:len(headers)]})
+    df = pandas.DataFrame({
+        'Age Band': headers,
+        'First Doses': cells[len(headers):len(headers)*2],
+        'Second Doses': cells[len(headers)*2:len(headers)*3],
+        'Booster Doses': cells[0:len(headers)],
+    })
     df['First Doses'] = df['First Doses'].str.replace(',','').astype(int)
     df['Second Doses'] = df['Second Doses'].str.replace(',','').astype(int)
     df['Booster Doses'] = df['Booster Doses'].str.replace(r'^\s*$','0').str.replace(',','').astype(int)
@@ -224,18 +229,18 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir):
     ni.rename(columns={'Total': 'First Doses'}, inplace=True)
     # Combine into age bands
     ni = ni.merge(age_bands, how='inner', left_on='Age Band', right_on='NI bands', validate='1:1')
-    ni_as_reported = ni.groupby(['Age Band']).sum()[['First Doses','Second Doses']].reset_index()
+    ni_as_reported = ni.groupby(['Age Band']).sum()[['First Doses','Second Doses','Booster Doses']].reset_index()
     ni_as_reported = ni_as_reported.merge(pop_reported, how='right', left_on='Age Band', right_on='Band', validate='1:1')
-    ni_as_reported = ni_as_reported[['Band', 'Order', 'First Doses', 'Second Doses', 'Population', '% of total population']]
+    ni_as_reported = ni_as_reported[['Band', 'Order', 'First Doses', 'Second Doses', 'Booster Doses', 'Population', '% of total population']]
     # Update the s3 store
     keyname = '%s/agebands.csv' % s3_dir
     datastore = update_datastore(s3, bucketname, keyname, last_updated, ni_as_reported)
     previous_date = datastore[datastore['Date'] < datastore['Date'].max()]['Date'].max()
-    previous = datastore[datastore['Date'] == previous_date][['Band', 'First Doses','Second Doses']].rename(columns={'First Doses':'Previous First', 'Second Doses':'Previous Second'})
+    previous = datastore[datastore['Date'] == previous_date][['Band', 'First Doses','Second Doses','Booster Doses']].rename(columns={'First Doses':'Previous First', 'Second Doses':'Previous Second', 'Booster Doses': 'Previous Booster'})
     if len(previous) > 0:
         ni_as_reported = ni_as_reported.merge(previous, how='left', on='Band')
     # Combine with the comparable population data
-    ni = ni.groupby(['Band']).sum()[['First Doses','Second Doses']].reset_index()
+    ni = ni.groupby(['Band']).sum()[['First Doses','Second Doses','Booster Doses']].reset_index()
     ni = ni.merge(pop, how='right', on='Band', validate='1:1')
     ni = ni[['Band', 'Order', 'First Doses', 'Second Doses', 'Booster Doses', 'Population', '% of total population']]
     ni['Nation'] = 'Northern Ireland'
@@ -650,6 +655,7 @@ One block is one person in 20
             logging.exception('Caught exception in scraping/plotting')
     tweet3 = None
     tweet4 = None
+    tweet5 = None
     try:
         if ni_age_bands_reported is not None:
 
@@ -694,6 +700,29 @@ One block is one person in 20
                             new=int(change),
                         )
                         first = False
+            tweet5 = 'NI COVID-19 booster doses by age band\n\n'
+            first = True
+            for _,data in ni_age_bands_reported.to_dict('index').items():
+                if data['Booster Doses'] > 0:
+                    fstring = '\u2022 {band}: {pct_done:.1%}'
+                    if first:
+                        fstring += ' of total'
+                    if ('Previous Booster' in data) and (not pandas.isna(data['Second Doses'])):
+                        fstring += ', {new:,}'
+                        if first:
+                            fstring += ' new'
+                    fstring += '\n'
+                    if not pandas.isna(data['Booster Doses']):
+                        if pandas.isna(data.get('Previous Booster',0)):
+                            change = 0
+                        else:
+                            change = data['Booster Doses']-data.get('Previous Booster',0)
+                        tweet5 += fstring.format(
+                            band=data['Band'],
+                            pct_done=data['Booster Doses']/data['Population'],
+                            new=int(change),
+                        )
+                        first = False
     except:
         logging.exception('Caught error in age band tweet')
 
@@ -713,6 +742,8 @@ One block is one person in 20
                 resp = api.dm(secret['twitter_dmaccount'], tweet3)
             if tweet4 is not None:
                 resp = api.dm(secret['twitter_dmaccount'], tweet4)
+            if tweet5 is not None:
+                resp = api.dm(secret['twitter_dmaccount'], tweet5)
             message = 'Sent test DM'
         else:
             if len(upload_ids) > 0:
@@ -736,6 +767,10 @@ One block is one person in 20
             if tweet4 is not None:
                 resp = api.tweet(tweet4, resp.id)
                 message = 'Tweeted reply ID %s' %resp.id
+
+            if tweet5 is not None:
+                resp = api.tweet(tweet5, resp.id)
+                message = 'Tweeted reply ID %s' %resp.id
     else:
         print(tweet)
         print(tweet2)
@@ -743,6 +778,8 @@ One block is one person in 20
             print(tweet3)
         if tweet4 is not None:
             print(tweet4)
+        if tweet5 is not None:
+            print(tweet5)
         message = 'Did not tweet'
 
     return {
