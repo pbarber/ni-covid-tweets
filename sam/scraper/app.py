@@ -11,7 +11,7 @@ import boto3
 
 from shared import S3_scraper_index, launch_lambda_async, get_url, get_and_sort_index
 
-def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y',element="div",htmlclass="nigovfile"):
+def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y',element="div",htmlclass="nigovfile",matchgroup=1):
     html = BeautifulSoup(text,features="html.parser")
     files = []
     regex = re.compile(regex, flags=re.IGNORECASE)
@@ -20,10 +20,10 @@ def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y',element=
             m = regex.search(a['href'])
             if m:
                 if len(datesub) == 2:
-                    datestr = re.sub(datesub[0],datesub[1],m.group(1))
+                    datestr = re.sub(datesub[0],datesub[1],m.group(matchgroup))
                 else:
-                    datestr = m.group(1)
-                datestr = datestr.replace('%20',' ')
+                    datestr = m.group(matchgroup)
+                datestr = datestr.replace('%20','-')
                 resp = requests.head(a['href'])
                 resp.raise_for_status()
                 filedate = datetime.datetime.strptime(datestr,datefmt)
@@ -326,7 +326,8 @@ def check_for_nisra_files(s3client, bucket, previous):
     if durl.startswith('/'):
         durl = 'https://www.nisra.gov.uk' + durl
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly_Deaths%20-%20w%20e%2019th%20March%202021.XLSX
-    excels = extract_doh_file_list(get_url(session,durl,'text'), 1, r'w%20e%20(\d+[a-z]+%20[A-Za-z]+%20\d+).*\.(?:xlsx|XLSX)$', [r'(\d)(st|nd|rd|th)', r'\1'], r'%d %B %Y')
+    # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly-Deaths-we-17-September-2021.XLSX
+    excels = extract_doh_file_list(get_url(session,durl,'text'), 1, r'w(%20)*e(%20|-)(\d+[a-z]*(%20|-)[A-Za-z]+(%20|-)\d+).*\.(?:xlsx|XLSX)$', [r'(\d)(st|nd|rd|th)', r'\1'], r'%d-%B-%Y', matchgroup=3)
     # Merge the new data into the previous list and detect changes
     index, changes = check_file_list_against_previous(excels, previous)
     # Upload the changed files to s3
