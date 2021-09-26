@@ -38,7 +38,7 @@ case_band_mapping = pandas.DataFrame({
     })
 
 # %%
-admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-140921.xlsx', sheet_name='Admissions')
+admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-240921.xlsx', sheet_name='Admissions')
 admissions = admissions.groupby(['Admission Date', 'Age Band'])['Number of Admissions'].sum().reset_index()
 admissions['Admission Date'] = pandas.to_datetime(admissions['Admission Date'])
 admissions = load_grouped_time_series(admissions, 'Admission Date', 'Age Band', 'Number of Admissions', 'Admissions', False)
@@ -74,15 +74,18 @@ altair.Chart(cases[cases['Date'] > '2021-07-01']).mark_line().encode(
 )
 
 # %%
-altair.Chart(cases[cases['Date'] > '2021-07-01']).mark_line().encode(
+altair.Chart(cases).mark_line().encode(
     x = 'Date:T',
     y = altair.Y(
-        field='Total_Tests',
+        field='Positive_Tests',
         type='quantitative',
         aggregate='sum',
-        axis=altair.Axis(title='Tests per day (7 day total)'),
+        axis=altair.Axis(title='Cases per day (7 day total)'),
     ),
-    color = 'Group:N'
+    facet = altair.Facet('Age_Band_5yr:N', columns=4, sort=altair.EncodingSortField('Band Start')),
+).properties(
+    height=100,
+    width=100
 )
 
 # %%
