@@ -148,7 +148,7 @@ def pbi_goto_page(driver, pagenum):
         time.sleep(3.0 + 3*(random.random()))
         driver.find_element_by_css_selector(".pbi-glyph-chevronrightmedium").click()
 
-def update_datastore(s3, bucketname, keyname, last_updated, df):
+def update_datastore(s3, bucketname, keyname, last_updated, df, store):
     # Pull current data from s3
     try:
         obj = s3.get_object(Bucket=bucketname,Key=keyname)['Body']
@@ -165,13 +165,14 @@ def update_datastore(s3, bucketname, keyname, last_updated, df):
     datastore['Date'] = datastore['Date'].fillna(last_updated)
     datastore['Date'] = pandas.to_datetime(datastore['Date'])
     # Push the data to s3
-    stream = io.BytesIO()
-    datastore.to_csv(stream, index=False)
-    stream.seek(0)
-    s3.upload_fileobj(stream, bucketname, keyname)
+    if store is True:
+        stream = io.BytesIO()
+        datastore.to_csv(stream, index=False)
+        stream.seek(0)
+        s3.upload_fileobj(stream, bucketname, keyname)
     return datastore
 
-def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir):
+def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir, store):
     pop = get_ni_comparable_population_age_bands()
     pop_reported = get_ni_reported_population_age_bands()
     age_bands = all_age_bands_lookup.explode('NI bands').reset_index()
@@ -234,7 +235,7 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir):
     ni_as_reported = ni_as_reported[['Band', 'Order', 'First Doses', 'Second Doses', 'Booster Doses', 'Population', '% of total population']]
     # Update the s3 store
     keyname = '%s/agebands.csv' % s3_dir
-    datastore = update_datastore(s3, bucketname, keyname, last_updated, ni_as_reported)
+    datastore = update_datastore(s3, bucketname, keyname, last_updated, ni_as_reported, store)
     previous_date = datastore[datastore['Date'] < datastore['Date'].max()]['Date'].max()
     previous = datastore[datastore['Date'] == previous_date][['Band', 'First Doses','Second Doses','Booster Doses']].rename(columns={'First Doses':'Previous First', 'Second Doses':'Previous Second', 'Booster Doses': 'Previous Booster'})
     if len(previous) > 0:
@@ -284,7 +285,7 @@ def make_age_band_plots(driver, ni, plots, today):
         title=altair.TitleParams(
             ['Population data for 2020 from ONS',
             'Vaccination data from HSCNI and NHS England',
-            'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%d-%m')],
+            'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%m-%d')],
             baseline='bottom',
             orient='bottom',
             anchor='end',
@@ -293,7 +294,7 @@ def make_age_band_plots(driver, ni, plots, today):
             dy=10
         ),
     )
-    plotname = 'vacc-ni-eng-1-%s.png'%today.strftime('%Y-%d-%m')
+    plotname = 'vacc-ni-eng-1-%s.png'%today.strftime('%Y-%m-%d')
     plotstore = io.BytesIO()
     p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
     plotstore.seek(0)
@@ -322,7 +323,7 @@ def make_age_band_plots(driver, ni, plots, today):
         title=altair.TitleParams(
             ['Population data for 2020 from ONS',
             'Vaccination data from HSCNI and NHS England',
-            'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%d-%m')],
+            'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%m-%d')],
             baseline='bottom',
             orient='bottom',
             anchor='end',
@@ -331,7 +332,7 @@ def make_age_band_plots(driver, ni, plots, today):
             dy=10
         ),
     )
-    plotname = 'vacc-ni-eng-2-%s.png'%today.strftime('%Y-%d-%m')
+    plotname = 'vacc-ni-eng-2-%s.png'%today.strftime('%Y-%m-%d')
     plotstore = io.BytesIO()
     p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
     plotstore.seek(0)
@@ -403,7 +404,7 @@ ni_postcode_pops = pandas.DataFrame({
     ],
 })
 
-def get_ni_postcode_data(driver, s3, bucketname, last_updated, s3_dir):
+def get_ni_postcode_data(driver, s3, bucketname, last_updated, s3_dir, store):
     # Navigate to page 6 of the report
     pbi_goto_page(driver, 6)
     # Right click on the bubble chart
@@ -465,12 +466,14 @@ def get_ni_postcode_data(driver, s3, bucketname, last_updated, s3_dir):
     df['Potential vaccinations'] = (df['Population over 20'] * 2) - df['Vaccinations']
     # Update the s3 store
     keyname = '%s/postcodes.csv' % s3_dir
-    _ = update_datastore(s3, bucketname, keyname, last_updated, df)
-    return df
+    datastore = update_datastore(s3, bucketname, keyname, last_updated, df, store)
+    return datastore
 
-def make_postcode_plots(driver, df, plots, today, last_updated):
+def make_postcode_plots(driver, datastore, plots, today, last_updated):
     # Calculate the NI vaccinations per person
+    df = datastore[datastore['Date']==datastore['Date'].max()]
     df['colour'] = 'A'
+    df.drop(columns='Date', inplace=True)
     df = df.append(
         {
             'Postcode District': 'NI',
@@ -522,7 +525,7 @@ def make_postcode_plots(driver, df, plots, today, last_updated):
             dy=10
         ),
     )
-    plotname = 'vacc-postcodes-%s.png'%today.strftime('%Y-%d-%m')
+    plotname = 'vacc-postcodes-%s.png'%today.strftime('%Y-%m-%d')
     plotstore = io.BytesIO()
     p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
     plotstore.seek(0)
@@ -553,7 +556,45 @@ def make_postcode_plots(driver, df, plots, today, last_updated):
             dy=10
         ),
     )
-    plotname = 'vacc-postcodes-not-given-%s.png'%today.strftime('%Y-%d-%m')
+    plotname = 'vacc-postcodes-not-given-%s.png'%today.strftime('%Y-%m-%d')
+    plotstore = io.BytesIO()
+    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+    plotstore.seek(0)
+    plots.append({'name': plotname, 'store': plotstore})
+    last_reported = datastore[datastore['Date']!=datastore['Date'].max()]
+    last_reported = last_reported[last_reported['Date']==last_reported['Date'].max()]
+    last_reported.drop(columns='Date', inplace=True)
+    change = df.merge(last_reported, how='inner', on='Postcode District', suffixes=('','_y'))
+    change['Change'] = change['Vaccinations']-change['Vaccinations_y']
+    p = altair.vconcat(
+        altair.Chart(change).mark_bar().encode(
+            y=altair.Y(
+                'Postcode District:N',
+                title='Postcode District (highest change at top, lowest at bottom)',
+                sort=altair.SortField(
+                    'Change',
+                    'descending'
+                )
+            ),
+            x=altair.X('Change:Q', title='New vaccinations last week')
+        ).properties(
+            height=1000,
+            width=450,
+            title='NI COVID-19 Vaccinations last week by Postcode District'
+        )
+    ).properties(
+        title=altair.TitleParams(
+            ['Vaccinations data from HSCNI COVID-19 dashboard',
+            'https://twitter.com/ni_covid19_data on %s' %datetime.datetime.now().strftime('%A %-d %B %Y')],
+            baseline='bottom',
+            orient='bottom',
+            anchor='end',
+            fontWeight='normal',
+            fontSize=10,
+            dy=10
+        ),
+    )
+    plotname = 'vacc-weekly-change-%s.png'%today.strftime('%Y-%m-%d')
     plotstore = io.BytesIO()
     p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
     plotstore.seek(0)
@@ -643,11 +684,12 @@ One block is one person in 20
             url = html.find('iframe')['src']
             # Use selenium to get the PowerBI report
             driver.get(url)
+            store_data = (event.get('notweet') is not True) and (event.get('testtweet') is not True)
             s3dir = keyname.rsplit('/',maxsplit=1)[0]
-            ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir)
+            ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
             if today.weekday() == 5: # Saturday - Vaccinations per person by postcode district
                 driver.get(url)
-                postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir)
+                postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
                 plots = make_postcode_plots(driver, postcodes, plots, today, event['Last Updated'])
             elif today.weekday() == 0: # Monday - NI/Eng age band comparison
                 plots = make_age_band_plots(driver, ni_age_bands, plots, today)
@@ -735,7 +777,7 @@ One block is one person in 20
             else:
                 resp = api.dm(secret['twitter_dmaccount'], tweet)
             if len(upload_ids) > 1:
-                resp = api.dm(secret['twitter_dmaccount'], tweet2, upload_ids[1])
+                resp = api.dm(secret['twitter_dmaccount'], tweet2, upload_ids[-1])
             else:
                 resp = api.dm(secret['twitter_dmaccount'], tweet2)
             if tweet3 is not None:
