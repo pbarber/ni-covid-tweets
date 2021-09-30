@@ -846,7 +846,7 @@ def lambda_handler(event, context):
                     status.put_dict(index)
                     message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
                 else:
-                    resp = api.tweet(tweets[j])
+                    resp = api.tweet(tweets[j], resp.id)
                     message = 'Tweeted reply ID %s' %resp.id
     else:
         for tweet in tweets:
