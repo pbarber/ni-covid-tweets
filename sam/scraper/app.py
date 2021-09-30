@@ -280,17 +280,18 @@ def check_vaccine(bucketname, indexkey, s3, notweet):
 
     # Choose which data to tweet
     chosen = None
+    doses = ['First','Second']
     if hscchange and phechange and (phe[0]['Last Updated'] == hsc[0]['Last Updated']):
         print('vaccines: both changed')
-        if phe[0]['Total Doses'] < hsc[0]['Total Doses']:
+        if any([phe[0]['Total %s Doses' %dose] < hsc[0]['Total %s Doses' %dose] for dose in doses]):
             chosen = hsc[0]
         else:
             chosen = phe[0]
     elif hscchange and ((len(index) == 0) or (hsc[0]['Last Updated'] >= index[0]['Last Updated'])):
-        if index[0]['Total Doses'] < hsc[0]['Total Doses']:
+        if any([index[0]['Total %s Doses' %dose] < hsc[0]['Total %s Doses' %dose] for dose in doses]):
             chosen = hsc[0]
     elif phechange and ((len(index) == 0) or (phe[0]['Last Updated'] >= index[0]['Last Updated'])):
-        if index[0]['Total Doses'] < phe[0]['Total Doses']:
+        if any([index[0]['Total %s Doses' %dose] < phe[0]['Total %s Doses' %dose] for dose in doses]):
             chosen = phe[0]
 
     # If there has been a change, then tweet
