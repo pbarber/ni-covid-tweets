@@ -172,12 +172,39 @@ def update_datastore(s3, bucketname, keyname, last_updated, df, store):
         s3.upload_fileobj(stream, bucketname, keyname)
     return datastore
 
+def get_ni_headline_data(driver, s3, bucketname, last_updated, s3_dir, store):
+    headers = [
+        my_elem.text for my_elem in WebDriverWait(
+            driver, 20).until(
+                EC.visibility_of_all_elements_located((
+                    By.CSS_SELECTOR,
+                    ".preTextWithEllipsis"
+                ))
+            )
+        ]
+    items = [
+        my_elem.text for my_elem in WebDriverWait(
+            driver, 20).until(
+                EC.visibility_of_all_elements_located((
+                    By.CSS_SELECTOR,
+                    ".visual-card"
+                ))
+            )
+        ]
+    df = pandas.DataFrame({'Dose': headers[1:], 'Total': items[1:len(headers)]})
+    print(df)
+    df['Total'] = df['Total'].str.replace(',','').astype(int)
+    df['Dose'] = df['Dose'].str.extract(r'\((.*)\)')
+    keyname = '%s/doses.csv' % s3_dir
+    datastore = update_datastore(s3, bucketname, keyname, last_updated, df, store)
+    return datastore
+
 def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir, store):
     pop = get_ni_comparable_population_age_bands()
     pop_reported = get_ni_reported_population_age_bands()
     age_bands = all_age_bands_lookup.explode('NI bands').reset_index()
-    # Navigate to page 4 of the report
-    pbi_goto_page(driver, 4)
+    # Navigate to page 5 of the report
+    pbi_goto_page(driver, 5)
     # Extract the table content
     items = [
         my_elem.text for my_elem in WebDriverWait(
@@ -405,8 +432,8 @@ ni_postcode_pops = pandas.DataFrame({
 })
 
 def get_ni_postcode_data(driver, s3, bucketname, last_updated, s3_dir, store):
-    # Navigate to page 6 of the report
-    pbi_goto_page(driver, 6)
+    # Navigate to page 9 of the report
+    pbi_goto_page(driver, 9)
     # Right click on the bubble chart
     WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CLASS_NAME, "mapBubbles")))
     webdriver.ActionChains(driver).context_click(driver.find_element_by_class_name("mapBubbles")).perform()
@@ -601,6 +628,88 @@ def make_postcode_plots(driver, datastore, plots, today, last_updated):
     plots.append({'name': plotname, 'store': plotstore})
     return plots
 
+def make_headline_tweets(df, source, last_updated):
+    latest = df[df['Date']==df['Date'].max()]
+    previous = df[df['Date']!=df['Date'].max()]
+    previous = previous[previous['Date']==previous['Date'].max()]
+    total_reg = int(latest['Total'].sum() - previous['Total'].sum())
+    first_reg = int(latest[latest['Dose']=='Dose 1']['Total'].sum() - previous[previous['Dose']=='Dose 1']['Total'].sum())
+    second_reg = int(latest[latest['Dose']=='Dose 2']['Total'].sum() - previous[previous['Dose']=='Dose 2']['Total'].sum())
+    third_reg = int(latest[latest['Dose']=='Dose 3']['Total'].sum() - previous[previous['Dose']=='Dose 3']['Total'].sum())
+    booster_reg = int(latest[latest['Dose']=='Booster']['Total'].sum() - previous[previous['Dose']=='Booster']['Total'].sum())
+    tweets = []
+    tweets.append('''{doses_24:,} COVID-19 vaccine doses registered in NI on {date}
+\u2022 {f_24:,} first
+\u2022 {s_24:,} second
+\u2022 {t_24:,} third
+\u2022 {b_24:,} booster
+\u2022 {pct_f}/{pct_s}/{pct_t}/{pct_b}% dose mix
+
+{total:,} in total
+\u2022 {total_f:,} first
+\u2022 {total_s:,} second
+\u2022 {total_t:,} third
+\u2022 {total_b:,} booster
+
+{source}'''.format(
+        doses_24=total_reg,
+        f_24=first_reg,
+        s_24=second_reg,
+        t_24=third_reg,
+        b_24=booster_reg,
+        total=int(latest['Total'].sum()),
+        total_f=int(latest[latest['Dose']=='Dose 1']['Total'].sum()),
+        total_s=int(latest[latest['Dose']=='Dose 2']['Total'].sum()),
+        total_t=int(latest[latest['Dose']=='Dose 3']['Total'].sum()),
+        total_b=int(latest[latest['Dose']=='Booster']['Total'].sum()),
+        pct_f=int(first_reg/total_reg * 100),
+        pct_s=int(second_reg/total_reg * 100),
+        pct_t=int(third_reg/total_reg * 100),
+        pct_b=int(booster_reg/total_reg * 100),
+        date=datetime.datetime.strptime(last_updated,'%Y-%m-%d').strftime('%A %-d %B %Y'),
+        source= 'https://coronavirus.data.gov.uk/' if source=='PHE' else 'https://covid-19.hscni.net/'
+    ))
+
+    blocks = ['','','','']
+    for i in range(20):
+        if (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 2']['Total'].sum() / 1499694):
+            blocks[i//5] += green_block
+        elif (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 1']['Total'].sum() / 1499694):
+            blocks[i//5] += white_block
+        else:
+            blocks[i//5] += black_block
+    tweets.append('''Proportion of NI adults (16 and over) vaccinated against COVID-19:
+
+\u2022 {pop_f:.1%} first
+\u2022 {pop_s:.1%} second
+\u2022 {pop_t:.1%} third
+\u2022 {pop_b:.1%} booster
+
+{blocks0}
+{blocks1}
+{blocks2}
+{blocks3}
+
+One block is one person in 20
+
+{green} - 2nd dose received
+{white} - 1st dose received
+{black} - no doses'''.format(
+        pop_f=latest[latest['Dose']=='Dose 1']['Total'].sum() / 1499694,
+        pop_s=latest[latest['Dose']=='Dose 2']['Total'].sum() / 1499694,
+        pop_t=latest[latest['Dose']=='Dose 3']['Total'].sum() / 1499694,
+        pop_b=latest[latest['Dose']=='Booster']['Total'].sum() / 1499694,
+        blocks0=blocks[0],
+        blocks1=blocks[1],
+        blocks2=blocks[2],
+        blocks3=blocks[3],
+        green=green_block,
+        white=white_block,
+        black=black_block
+    ))
+    return tweets
+
+
 def lambda_handler(event, context):
     # Get the secret
     sm = boto3.client('secretsmanager')
@@ -613,62 +722,7 @@ def lambda_handler(event, context):
     status = S3_scraper_index(s3, secret['bucketname'], keyname)
     index = status.get_dict()
 
-    tweet = '''{doses_24:,} COVID-19 vaccine doses registered in NI on {date}
-\u2022 {f_24:,} first
-\u2022 {s_24:,} second
-\u2022 {pct_f:.0%}/{pct_s:.0%} dose mix
-
-{total:,} in total
-\u2022 {total_f:,} first
-\u2022 {total_s:,} second
-
-Population (16+) vaccinated
-\u2022 {pop_f}% first
-\u2022 {pop_s}% second
-
-{source}'''.format(
-    doses_24=event['First Doses Registered'] + event['Second Doses Registered'],
-    f_24=event['First Doses Registered'],
-    s_24=event['Second Doses Registered'],
-    total=event['Total Doses'],
-    total_f=event['Total First Doses'],
-    total_s=event['Total Second Doses'],
-    pct_f=event['First Doses Registered'] / (event['First Doses Registered'] + event['Second Doses Registered']),
-    pct_s=event['Second Doses Registered'] / (event['First Doses Registered'] + event['Second Doses Registered']),
-    date=datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d').strftime('%A %-d %B %Y'),
-    pop_f=event['First Doses pc'],
-    pop_s=event['Second Doses pc'],
-    source= 'https://coronavirus.data.gov.uk/' if event['Source']=='PHE' else 'https://covid-19.hscni.net/'
-    )
-
-    blocks = ['','','','']
-    for i in range(20):
-        if (i*5)+5 <= event['Second Doses pc']:
-            blocks[i//5] += green_block
-        elif (i*5)+5 <= event['First Doses pc']:
-            blocks[i//5] += white_block
-        else:
-            blocks[i//5] += black_block
-    tweet2 = '''Proportion of NI adults (16 and over) vaccinated against COVID-19:
-
-{blocks0}
-{blocks1}
-{blocks2}
-{blocks3}
-
-One block is one person in 20
-
-{green} - 2nd dose received
-{white} - 1st dose received
-{black} - no doses'''.format(
-    blocks0=blocks[0],
-    blocks1=blocks[1],
-    blocks2=blocks[2],
-    blocks3=blocks[3],
-    green=green_block,
-    white=white_block,
-    black=black_block
-)
+    tweets = []
     plots = []
     today = datetime.datetime.now().date()
     driver = get_chrome_driver()
@@ -686,6 +740,8 @@ One block is one person in 20
             driver.get(url)
             store_data = (event.get('notweet') is not True) and (event.get('testtweet') is not True)
             s3dir = keyname.rsplit('/',maxsplit=1)[0]
+            headlines = get_ni_headline_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
+            tweets = make_headline_tweets(headlines, event['Source'], event['Last Updated'])
             ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
             if today.weekday() == 5: # Saturday - Vaccinations per person by postcode district
                 driver.get(url)
@@ -695,13 +751,9 @@ One block is one person in 20
                 plots = make_age_band_plots(driver, ni_age_bands, plots, today)
         except:
             logging.exception('Caught exception in scraping/plotting')
-    tweet3 = None
-    tweet4 = None
-    tweet5 = None
     try:
         if ni_age_bands_reported is not None:
-
-            tweet3 = 'NI COVID-19 first doses by age band\n\n'
+            tweets.append('NI COVID-19 first doses by age band\n\n')
             first = True
             for _,data in ni_age_bands_reported.to_dict('index').items():
                 fstring = '\u2022 {band}: {pct_done:.1%}'
@@ -713,13 +765,13 @@ One block is one person in 20
                         fstring += ' new'
                 fstring += '\n'
                 if not pandas.isna(data['First Doses']):
-                    tweet3 += fstring.format(
+                    tweets[-1] += fstring.format(
                         band=data['Band'],
                         pct_done=data['First Doses']/data['Population'],
                         new=int(data['First Doses']-data.get('Previous First',0)),
                     )
                     first = False
-            tweet4 = 'NI COVID-19 second doses by age band\n\n'
+            tweets.append('NI COVID-19 second doses by age band\n\n')
             first = True
             for _,data in ni_age_bands_reported.to_dict('index').items():
                 if data['Second Doses'] > 0:
@@ -736,13 +788,13 @@ One block is one person in 20
                             change = 0
                         else:
                             change = data['Second Doses']-data.get('Previous Second',0)
-                        tweet4 += fstring.format(
+                        tweets[-1] += fstring.format(
                             band=data['Band'],
                             pct_done=data['Second Doses']/data['Population'],
                             new=int(change),
                         )
                         first = False
-            tweet5 = 'NI COVID-19 booster doses by age band\n\n'
+            tweets.append('NI COVID-19 booster doses by age band\n\n')
             first = True
             for _,data in ni_age_bands_reported.to_dict('index').items():
                 if data['Booster Doses'] > 0:
@@ -759,7 +811,7 @@ One block is one person in 20
                             change = 0
                         else:
                             change = data['Booster Doses']-data.get('Previous Booster',0)
-                        tweet5 += fstring.format(
+                        tweets[-1] += fstring.format(
                             band=data['Band'],
                             pct_done=data['Booster Doses']/data['Population'],
                             new=int(change),
@@ -772,56 +824,33 @@ One block is one person in 20
         api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
         upload_ids = api.upload_multiple(plots)
         if event.get('testtweet') is True:
-            if len(upload_ids) > 0:
-                resp = api.dm(secret['twitter_dmaccount'], tweet, upload_ids[0])
-            else:
-                resp = api.dm(secret['twitter_dmaccount'], tweet)
-            if len(upload_ids) > 1:
-                resp = api.dm(secret['twitter_dmaccount'], tweet2, upload_ids[-1])
-            else:
-                resp = api.dm(secret['twitter_dmaccount'], tweet2)
-            if tweet3 is not None:
-                resp = api.dm(secret['twitter_dmaccount'], tweet3)
-            if tweet4 is not None:
-                resp = api.dm(secret['twitter_dmaccount'], tweet4)
-            if tweet5 is not None:
-                resp = api.dm(secret['twitter_dmaccount'], tweet5)
+            for i in range(len(tweets)):
+                if (len(upload_ids) > 0) and (i == 0):
+                    resp = api.dm(secret['twitter_dmaccount'], tweets[0], upload_ids[0])
+                elif (len(upload_ids) > 1) and (i == 1):
+                    resp = api.dm(secret['twitter_dmaccount'], tweets[1], upload_ids[-1])
+                else:
+                    resp = api.dm(secret['twitter_dmaccount'], tweets[i])
             message = 'Sent test DM'
         else:
-            if len(upload_ids) > 0:
-                resp = api.tweet(tweet, media_ids=upload_ids)
-            else:
-                resp = api.tweet(tweet)
-            for i in range(len(index)):
-                if index[i]['Last Updated'] == event['Last Updated']:
-                    index[i]['tweet'] = resp.id
-                    break
-            status.put_dict(index)
-            message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
-
-            resp = api.tweet(tweet2, resp.id)
-            message = 'Tweeted reply ID %s' %resp.id
-
-            if tweet3 is not None:
-                resp = api.tweet(tweet3, resp.id)
-                message = 'Tweeted reply ID %s' %resp.id
-
-            if tweet4 is not None:
-                resp = api.tweet(tweet4, resp.id)
-                message = 'Tweeted reply ID %s' %resp.id
-
-            if tweet5 is not None:
-                resp = api.tweet(tweet5, resp.id)
-                message = 'Tweeted reply ID %s' %resp.id
+            for j in range(len(tweets)):
+                if j == 0:
+                    if len(upload_ids) > 0:
+                        resp = api.tweet(tweets[0], media_ids=upload_ids)
+                    else:
+                        resp = api.tweet(tweets[0])
+                    for i in range(len(index)):
+                        if index[i]['Last Updated'] == event['Last Updated']:
+                            index[i]['tweet'] = resp.id
+                            break
+                    status.put_dict(index)
+                    message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
+                else:
+                    resp = api.tweet(tweets[j])
+                    message = 'Tweeted reply ID %s' %resp.id
     else:
-        print(tweet)
-        print(tweet2)
-        if tweet3 is not None:
-            print(tweet3)
-        if tweet4 is not None:
-            print(tweet4)
-        if tweet5 is not None:
-            print(tweet5)
+        for tweet in tweets:
+            print(tweet)
         message = 'Did not tweet'
 
     return {
