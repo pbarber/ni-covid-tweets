@@ -31,20 +31,21 @@ black_block = '\u2b1b'
 
 # List of NI age bands, with ordering for plotting
 ni_age_bands_lookup = pandas.DataFrame([
-    {'Order': 0, 'NI band': 'Under 16', 'Ages': [i for i in range(16)]},
-    {'Order': 1, 'NI band': '16-17', 'Ages': [i for i in range(16,18)]},
-    {'Order': 2, 'NI band': '18-29', 'Ages': [i for i in range(18,30)]},
-    {'Order': 3, 'NI band': '30-39', 'Ages': [i for i in range(30,40)]},
-    {'Order': 4, 'NI band': '40-49', 'Ages': [i for i in range(40,50)]},
-    {'Order': 5, 'NI band': '50-59', 'Ages': [i for i in range(50,60)]},
-    {'Order': 6, 'NI band': '60-69', 'Ages': [i for i in range(60,70)]},
-    {'Order': 7, 'NI band': '70-79', 'Ages': [i for i in range(70,80)]},
-    {'Order': 8, 'NI band': '80+', 'Ages': [i for i in range(80,91)]},
+    {'Order': 0, 'NI band': 'Under 12', 'Ages': [i for i in range(12)]},
+    {'Order': 1, 'NI band': '12-15', 'Ages': [i for i in range(12,16)]},
+    {'Order': 2, 'NI band': '16-17', 'Ages': [i for i in range(16,18)]},
+    {'Order': 3, 'NI band': '18-29', 'Ages': [i for i in range(18,30)]},
+    {'Order': 4, 'NI band': '30-39', 'Ages': [i for i in range(30,40)]},
+    {'Order': 5, 'NI band': '40-49', 'Ages': [i for i in range(40,50)]},
+    {'Order': 6, 'NI band': '50-59', 'Ages': [i for i in range(50,60)]},
+    {'Order': 7, 'NI band': '60-69', 'Ages': [i for i in range(60,70)]},
+    {'Order': 8, 'NI band': '70-79', 'Ages': [i for i in range(70,80)]},
+    {'Order': 9, 'NI band': '80+', 'Ages': [i for i in range(80,91)]},
 ])
 
 # List of comparable age bands, with ordering for plotting
 all_age_bands_lookup = pandas.DataFrame([
-    {'Order': 0, 'NI bands': ['Under 16', '16-17'], 'Band': 'Under 18', 'Ages': [i for i in range(18)], 'Eng bands': ['Under 18']},
+    {'Order': 0, 'NI bands': ['Under 12', '12-15', '16-17'], 'Band': 'Under 18', 'Ages': [i for i in range(18)], 'Eng bands': ['Under 18']},
     {'Order': 1, 'NI bands': ['18-29'], 'Band': '18-29', 'Ages': [i for i in range(18,30)], 'Eng bands': ['18-24','25-29']},
     {'Order': 2, 'NI bands': ['30-39'], 'Band': '30-39', 'Ages': [i for i in range(30,40)], 'Eng bands': ['30-34','35-39']},
     {'Order': 3, 'NI bands': ['40-49'], 'Band': '40-49', 'Ages': [i for i in range(40,50)], 'Eng bands': ['40-44','45-49']},
@@ -182,7 +183,6 @@ def get_ni_headline_data(driver, s3, bucketname, last_updated, s3_dir, store):
             )
         ]
     df = pandas.DataFrame({'Dose': headers[1:], 'Total': items[1:len(headers)]})
-    print(df)
     df['Total'] = df['Total'].str.replace(',','').astype(int)
     df['Dose'] = df['Dose'].str.extract(r'\((.*)\)')
     keyname = '%s/doses.csv' % s3_dir
@@ -213,7 +213,7 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir, store):
         cells.insert(0, cells[-2])
         cells.insert(len(headers), cells[-1])
         cells = cells[:-2]
-    elif (headers[0] != '16-17'):
+    elif (headers[0] != '12-15'):
         raise Exception('Unknown table format')
     ni = pandas.DataFrame({'Age Band': headers, 'Total': cells[len(headers):]})
     ni['Total'] = ni['Total'].str.replace(',','').astype(int)
@@ -268,7 +268,6 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir, store):
 
 def make_age_band_plots(driver, ni, plots, today):
     eng = get_eng_age_band_data()
-    print(ni.columns)
     ni['Booster and Third Doses'] = ni['Booster Doses'] + ni['Third Doses']
     df = pandas.concat([ni, eng])
     for key,value in {'First':'first','Second':'second','Booster and Third':'booster and third'}.items():
