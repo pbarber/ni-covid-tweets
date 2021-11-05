@@ -2,6 +2,7 @@
 import pandas
 import altair
 from plot_shared import plot_points_average_and_trend
+from data_shared import get_ni_pop_pyramid
 import datetime
 
 # %%
@@ -34,11 +35,18 @@ case_band_mapping = pandas.DataFrame({
             '20+', '0 - 19', '20+', '20+',
             '20+', '20+', '20+', '20+',
             '20+', 'Unknown'
+        ],
+        'Broad Group': [
+            'Other', 'Secondary', 'College/Uni', 'Other',
+            'Other', 'Parent', 'Parent', 'Parent',
+            'Parent', 'Primary', 'Other', 'Other',
+            'Over 60', 'Over 60', 'Over 60', 'Over 60',
+            'Over 60', 'Other'
         ]
     })
 
 # %%
-admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-081021.xlsx', sheet_name='Admissions')
+admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-031021.xlsx', sheet_name='Admissions')
 admissions = admissions.groupby(['Admission Date', 'Age Band'])['Number of Admissions'].sum().reset_index()
 admissions['Admission Date'] = pandas.to_datetime(admissions['Admission Date'])
 admissions = load_grouped_time_series(admissions, 'Admission Date', 'Age Band', 'Number of Admissions', 'Admissions', False)
@@ -60,6 +68,19 @@ altair.Chart(admissions[admissions['Date'] > '2021-07-01']).mark_line().encode(
 # %%
 cases = pandas.read_csv('agebands.csv')
 cases = cases.merge(case_band_mapping, how='left', on='Age_Band_5yr')
+pops = get_ni_pop_pyramid()
+pops = pops[pops['Year']==2020].groupby(['Age Band']).sum()['Population']
+bands = cases.groupby(['Age_Band_5yr','Band Start','Band End'], dropna=False).size().reset_index()[['Age_Band_5yr','Band Start','Band End']]
+bands = bands[bands['Age_Band_5yr']!='Not Known']
+bands.fillna(90, inplace=True)
+bands['Band End'] = bands['Band End'].astype(int)
+bands['Band Start'] = bands['Band Start'].astype(int)
+bands['Year'] = bands.apply(lambda x: range(x['Band Start'], x['Band End']+1), axis='columns')
+bands = bands.explode('Year').reset_index()
+bands = bands.merge(pops, how='inner', validate='1:1', right_index=True, left_on='Year')
+bands = bands.groupby('Age_Band_5yr').sum()['Population']
+cases = cases.merge(bands, how='left', on='Age_Band_5yr')
+cases['Positive per 100k'] = (100000 * cases['Positive_Tests']) / cases['Population']
 overlay = cases[cases['Date'] == cases['Date'].max()]
 overlay['Nearest'] = ((overlay['Positive_Tests']/overlay['Positive_Tests'].max()) * 40).astype(int) * (overlay['Positive_Tests'].max() / 40)
 #overlay['Nearest'] = overlay['Nearest'].where(overlay['Band Start'] == 5)
@@ -138,6 +159,138 @@ plt = altair.concat(
 )
 plt.save('ni-age-band-cases-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
 plt
+
+# %%
+def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, latest_y, title, subtitle):
+    trend = altair.Chart(df).mark_line().encode(
+        x = x,
+        y = altair.Y(
+            field=y,
+            type='quantitative',
+            aggregate='sum',
+            axis=altair.Axis(title=y_title, format=y_format),
+        ),
+        color = altair.Color(
+            color,
+            legend=None
+        ),
+    )
+
+    text = altair.Chart(latest).mark_text(
+        align='left',
+        baseline='middle',
+        dx=5
+    ).encode(
+        x = x,
+        y = altair.Y(
+            field=latest_y,
+            type='quantitative',
+            aggregate='sum',
+        ),
+        color = altair.Color(
+            color,
+            legend=None
+        ),
+        text = altair.Text('Broad Group')
+    )
+
+    return altair.concat(
+        altair.layer(
+            trend,
+            text
+        ).properties(
+            height=450,
+            width=800,
+            title=altair.TitleParams(
+                subtitle,
+                baseline='bottom',
+                orient='bottom',
+                anchor='end',
+                fontWeight='normal',
+                fontSize=10,
+                dy=10
+            ),
+        )
+    ).properties(
+        title=altair.TitleParams(
+            title,
+            anchor='middle',
+        )
+    )
+
+cases_broad = cases.groupby(['Date','Broad Group']).sum().reset_index()
+cases_broad['Positive per 100k'] = (100000 * cases_broad['Positive_Tests']) / cases_broad['Population']
+cases_broad['Tests per 100k'] = (100000 * cases_broad['Total_Tests']) / cases_broad['Population']
+cases_broad['Positivity_Rate'] = cases_broad['Positive_Tests'] / cases_broad['Total_Tests']
+overlay = cases_broad[cases_broad['Date'] == cases_broad['Date'].max()]
+overlay['Nearest'] = overlay['Positive per 100k']
+overlay['Nearest_PR'] = overlay['Positivity_Rate']
+overlay.loc[overlay['Broad Group'] == 'Primary', 'Nearest'] = 600
+overlay.loc[overlay['Broad Group'] == 'Other', 'Nearest'] = 300
+overlay['Nearest_Tests'] = overlay['Tests per 100k']
+
+plt = plot_timelines_with_latest(
+    cases_broad,
+    'Date:T',
+    'Positive per 100k',
+    'Broad Group:N',
+    'Positive per 100k (7 day total)',
+    ',.2r',
+    overlay,
+    'Nearest',
+    'NI COVID-19 positive cases per 100k people by age group',
+    [
+        'From DoH daily data',
+        'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+    ]
+)
+plt.save('ni-age-band-100k-cases-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
+plt
+
+# %%
+overlay.loc[overlay['Broad Group'] == 'Other', 'Nearest_PR'] = 0.07
+overlay.loc[overlay['Broad Group'] == 'Parent', 'Nearest_PR'] = 0.105
+
+plt = plot_timelines_with_latest(
+    cases_broad,
+    'Date:T',
+    'Positivity_Rate',
+    'Broad Group:N',
+    'Positivity Rate (7-date average)',
+    '%',
+    overlay,
+    'Nearest_PR',
+    'NI COVID-19 7-day positivity rate by age group',
+    [
+        'From DoH daily data',
+        'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+    ]
+)
+plt.save('ni-age-band-pr-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
+plt
+
+# %%
+plt = plot_timelines_with_latest(
+    cases_broad,
+    'Date:T',
+    'Tests per 100k',
+    'Broad Group:N',
+    'Total Tests (7-day total)',
+    ',.2r',
+    overlay,
+    'Nearest_Tests',
+    'NI COVID-19 7-day total tests by age group',
+    [
+        'From DoH daily data',
+        'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+    ]
+)
+plt.save('ni-age-band-tests-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
+plt
+
+# %%
+overlay['One in N'] = 100000 / overlay['Positive per 100k']
+overlay
 
 # %%
 cases_total = cases.groupby(['Date','Age_Band_5yr'])['Positive_Tests'].sum()
@@ -223,3 +376,10 @@ plt = plot_points_average_and_trend(
 )
 plt.save('ni-under-over-20-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
 plt
+
+# %%
+cases
+# %%
+cases.groupby('Date').sum()[['Positive_Tests','Total_Tests']]
+# %%
+summ = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-081021.xlsx', sheet_name='Summary Tests')
