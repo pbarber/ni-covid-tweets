@@ -92,10 +92,7 @@ def get_eng_population_age_bands():
     return eng_pop
 
 def clean_eng_age_band_cols(x):
-    if x[1].startswith('Unnamed'):
-        return x[0].rstrip('0123456789,')
-    else:
-        return x[0].rstrip('0123456789,') + '_' + x[1]
+    return x.rstrip('0123456789,')
 
 def get_eng_age_band_data():
     pop = get_eng_population_age_bands()
@@ -113,31 +110,24 @@ def get_eng_age_band_data():
         raise Exception('Unable to find England data')
     # Get the age band data, transform and aggregate
     try:
-        eng = pandas.read_excel(url, sheet_name='Vaccinations by LTLA and Age ', header=[12,13])
+        eng = pandas.read_excel(url, sheet_name='Total Vaccinations by Age', header=12)
         eng.dropna(axis='columns', how='all', inplace=True)
         eng.dropna(axis='index', how='all', inplace=True)
         newcols = [clean_eng_age_band_cols(i) for i in eng.columns.values]
     except AttributeError:
         logging.exception('Falling back to earlier header row')
-        eng = pandas.read_excel(url, sheet_name='Vaccinations by LTLA and Age ', header=[11,12])
+        eng = pandas.read_excel(url, sheet_name='Total Vaccinations by Age', header=11)
         eng.dropna(axis='columns', how='all', inplace=True)
         eng.dropna(axis='index', how='all', inplace=True)
         newcols = [clean_eng_age_band_cols(i) for i in eng.columns.values]
     eng.columns = newcols
-    eng.dropna(axis='index', subset=['UTLA Name'], inplace=True)
-    eng = eng.drop(columns=['UTLA Code','UTLA Name','LTLA Code','LTLA Name','Total 1st Doses','Total 2nd Doses','Cumulative Total Doses (1st and 2nd doses) to Date'])
-    eng = eng.transpose().reset_index()
-    eng[['Dose','Age Band']] = eng['index'].str.split('_',1,expand=True)
-    eng.drop(columns=['index'],inplace=True)
-    eng = eng.set_index(['Dose','Age Band'])
-    eng = eng.fillna(0).sum(axis=1)
-    eng.name = 'First Doses'
-    eng = eng.reset_index()
-    eng['First Doses'] = eng['First Doses'].astype(int)
-    eng = eng[eng['Dose']=='1st dose'][['Age Band', 'First Doses']]
+    eng.dropna(axis='index', subset=['1st dose'], inplace=True)
+    eng = eng.drop(columns=['Cumulative Total Doses to Date'])
+    eng = eng[~eng['Age Group'].str.startswith('England')]
+    eng.rename(columns={'Age Group': 'Age Band', '1st dose': 'First Doses', '2nd dose': 'Second Doses', 'Booster and 3rd dose': 'Booster and Third Doses'}, inplace=True)
     # Join to the population data and group by band
     eng = eng.merge(age_bands, how='inner', left_on='Age Band', right_on='Eng bands', validate='1:1')
-    eng = eng.groupby(['Band']).sum()['First Doses'].reset_index()
+    eng = eng.groupby(['Band']).sum()[['First Doses','Second Doses','Booster and Third Doses']].reset_index()
     eng = eng.merge(pop, how='inner', left_on='Band', right_on='Band', validate='1:1')
     eng['Nation'] = 'England'
     return eng
@@ -249,121 +239,129 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir, store):
         'First Doses': cells[len(headers):len(headers)*2],
         'Second Doses': cells[len(headers)*2:len(headers)*3],
         'Booster Doses': cells[0:len(headers)],
+        'Third Doses': cells[len(headers)*3:len(headers)*4],
     })
     df['First Doses'] = df['First Doses'].str.replace(',','').astype(int)
     df['Second Doses'] = df['Second Doses'].str.replace(',','').astype(int)
+    df['Third Doses'] = df['Third Doses'].str.replace(r'^\s*$','0').str.replace(',','').astype(int)
     df['Booster Doses'] = df['Booster Doses'].str.replace(r'^\s*$','0').str.replace(',','').astype(int)
     ni = ni.merge(df, how='left', on='Age Band').drop(columns='First Doses')
     ni.rename(columns={'Total': 'First Doses'}, inplace=True)
     # Combine into age bands
     ni = ni.merge(age_bands, how='inner', left_on='Age Band', right_on='NI bands', validate='1:1')
-    ni_as_reported = ni.groupby(['Age Band']).sum()[['First Doses','Second Doses','Booster Doses']].reset_index()
+    ni_as_reported = ni.groupby(['Age Band']).sum()[['First Doses','Second Doses','Third Doses','Booster Doses']].reset_index()
     ni_as_reported = ni_as_reported.merge(pop_reported, how='right', left_on='Age Band', right_on='Band', validate='1:1')
-    ni_as_reported = ni_as_reported[['Band', 'Order', 'First Doses', 'Second Doses', 'Booster Doses', 'Population', '% of total population']]
+    ni_as_reported = ni_as_reported[['Band', 'Order', 'First Doses', 'Second Doses', 'Third Doses', 'Booster Doses', 'Population', '% of total population']]
     # Update the s3 store
     keyname = '%s/agebands.csv' % s3_dir
     datastore = update_datastore(s3, bucketname, keyname, last_updated, ni_as_reported, store)
     previous_date = datastore[datastore['Date'] < datastore['Date'].max()]['Date'].max()
-    previous = datastore[datastore['Date'] == previous_date][['Band', 'First Doses','Second Doses','Booster Doses']].rename(columns={'First Doses':'Previous First', 'Second Doses':'Previous Second', 'Booster Doses': 'Previous Booster'})
+    previous = datastore[datastore['Date'] == previous_date][['Band', 'First Doses','Second Doses','Third Doses','Booster Doses']].rename(columns={'First Doses':'Previous First', 'Second Doses':'Previous Second', 'Booster Doses': 'Previous Booster'})
     if len(previous) > 0:
         ni_as_reported = ni_as_reported.merge(previous, how='left', on='Band')
     # Combine with the comparable population data
-    ni = ni.groupby(['Band']).sum()[['First Doses','Second Doses','Booster Doses']].reset_index()
+    ni = ni.groupby(['Band']).sum()[['First Doses','Second Doses','Third Doses','Booster Doses']].reset_index()
     ni = ni.merge(pop, how='right', on='Band', validate='1:1')
-    ni = ni[['Band', 'Order', 'First Doses', 'Second Doses', 'Booster Doses', 'Population', '% of total population']]
+    ni = ni[['Band', 'Order', 'First Doses', 'Second Doses', 'Third Doses', 'Booster Doses', 'Population', '% of total population']]
     ni['Nation'] = 'Northern Ireland'
     return ni, ni_as_reported
 
 def make_age_band_plots(driver, ni, plots, today):
     eng = get_eng_age_band_data()
+    print(ni.columns)
+    ni['Booster and Third Doses'] = ni['Booster Doses'] + ni['Third Doses']
     df = pandas.concat([ni, eng])
-    df['Percentage first doses'] = (df['First Doses']/df['Population']).clip(upper=1.0)
-    df['First doses as % of total population'] = df['Percentage first doses'] * df['% of total population']
-    ni_done = df[df['Nation']=='Northern Ireland']['First doses as % of total population'].sum()
-    eng_done = df[df['Nation']=='England']['First doses as % of total population'].sum()
-    pct_diff = ni_done - eng_done
-    p = altair.concat(
-        altair.Chart(df).mark_bar(
-            thickness=2,
-            width=25,
-            opacity=1
-        ).encode(
-            x=altair.X('Nation:O', axis=altair.Axis(labelAngle=0)),
-            y=altair.Y('First doses as % of total population:Q', aggregate='sum', axis=altair.Axis(format='%', title='Population received first dose')),
-            color=altair.Color('Nation', legend=None)
-        ).properties(
-            width=600,
-            title=altair.TitleParams(
-                text='NI has vaccinated {pct_diff:.0%} {dir} of its population than England'.format(
-                    pct_diff = abs(pct_diff),
-                    dir = 'more' if (pct_diff > 0) else 'less',
-                ),
-                subtitle=['NI has vaccinated {ni_done:.1%}, England {eng_done:.1%} for first doses'.format(
-                    ni_done=ni_done,
-                    eng_done=eng_done,
-                )],
-                align='left',
-                anchor='start',
-                fontSize=18,
-                subtitleFontSize=14
+    for key,value in {'First':'first','Second':'second','Booster and Third':'booster and third'}.items():
+        df['Percentage %s doses' %value] = (df['%s Doses' % key]/df['Population']).clip(upper=1.0)
+        df['%s doses as %% of total population' %key] = df['Percentage %s doses' %value] * df['% of total population']
+        ni_done = df[df['Nation']=='Northern Ireland']['%s doses as %% of total population' %key].sum()
+        eng_done = df[df['Nation']=='England']['%s doses as %% of total population' %key].sum()
+        pct_diff = ni_done - eng_done
+        p = altair.concat(
+            altair.Chart(df).mark_bar(
+                thickness=2,
+                width=25,
+                opacity=1
+            ).encode(
+                x=altair.X('Nation:O', axis=altair.Axis(labelAngle=0)),
+                y=altair.Y('%s doses as %% of total population:Q' % key, aggregate='sum', axis=altair.Axis(format='%', title='Population received %s dose' % value)),
+                color=altair.Color('Nation', legend=None)
+            ).properties(
+                width=600,
+                title=altair.TitleParams(
+                    text='NI has {val} dose vaccinated {pct_diff:.0%} {dir} of its population than England'.format(
+                        pct_diff = abs(pct_diff),
+                        dir = 'more' if (pct_diff > 0) else 'less',
+                        val = value,
+                    ),
+                    subtitle=['NI has vaccinated {ni_done:.1%}, England {eng_done:.1%} for {val} doses'.format(
+                        ni_done=ni_done,
+                        eng_done=eng_done,
+                        val=value,
+                    )],
+                    align='left',
+                    anchor='start',
+                    fontSize=18,
+                    subtitleFontSize=14
+                )
             )
-        )
-    ).properties(
-        title=altair.TitleParams(
-            ['Population data for 2020 from ONS',
-            'Vaccination data from HSCNI and NHS England',
-            'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%m-%d')],
-            baseline='bottom',
-            orient='bottom',
-            anchor='end',
-            fontWeight='normal',
-            fontSize=10,
-            dy=10
-        ),
-    )
-    plotname = 'vacc-ni-eng-1-%s.png'%today.strftime('%Y-%m-%d')
-    plotstore = io.BytesIO()
-    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
-    plotstore.seek(0)
-    plots.append({'name': plotname, 'store': plotstore})
-    p = altair.concat(
-        altair.Chart(df).mark_bar(
-            thickness=2,
-            width=25,
-            opacity=1
-        ).encode(
-            x=altair.X('Nation:O', axis=None),
-            y=altair.Y('Percentage first doses:Q', axis=altair.Axis(format='%', title='First doses completed')),
-            color='Nation',
-            column=altair.Column('Band:O', sort=altair.SortField('Order'), header=altair.Header(title='Age Band', labelOrient='bottom', titleOrient='bottom'), spacing=0)
         ).properties(
-            width=50,
             title=altair.TitleParams(
-                text='Difference between COVID-19 vaccine uptake for NI and England',
-                align='left',
-                anchor='start',
-                fontSize=18,
-                subtitleFontSize=15
-            )
+                ['Population data for 2020 from ONS',
+                'Vaccination data from HSCNI and NHS England',
+                'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%m-%d')],
+                baseline='bottom',
+                orient='bottom',
+                anchor='end',
+                fontWeight='normal',
+                fontSize=10,
+                dy=10
+            ),
         )
-    ).properties(
-        title=altair.TitleParams(
-            ['Population data for 2020 from ONS',
-            'Vaccination data from HSCNI and NHS England',
-            'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%m-%d')],
-            baseline='bottom',
-            orient='bottom',
-            anchor='end',
-            fontWeight='normal',
-            fontSize=10,
-            dy=10
-        ),
-    )
-    plotname = 'vacc-ni-eng-2-%s.png'%today.strftime('%Y-%m-%d')
-    plotstore = io.BytesIO()
-    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
-    plotstore.seek(0)
-    plots.append({'name': plotname, 'store': plotstore})
+        plotname = 'vacc-ni-eng-%s-1-%s.png'%(value,today.strftime('%Y-%m-%d'))
+        plotstore = io.BytesIO()
+        p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+        plotstore.seek(0)
+        plots.append({'name': plotname, 'store': plotstore})
+    for key,value in {'First':'first','Second':'second','Booster and Third':'booster and third'}.items():
+        p = altair.concat(
+            altair.Chart(df).mark_bar(
+                thickness=2,
+                width=25,
+                opacity=1
+            ).encode(
+                x=altair.X('Nation:O', axis=None),
+                y=altair.Y('Percentage %s doses:Q' % value, axis=altair.Axis(format='%', title='%s doses completed' % key)),
+                color='Nation',
+                column=altair.Column('Band:O', sort=altair.SortField('Order'), header=altair.Header(title='Age Band', labelOrient='bottom', titleOrient='bottom'), spacing=0)
+            ).properties(
+                width=50,
+                title=altair.TitleParams(
+                    text='%s dose COVID-19 vaccine uptake for NI and England' %(value[0].upper() + value[1:]),
+                    align='left',
+                    anchor='start',
+                    fontSize=18,
+                    subtitleFontSize=15
+                )
+            )
+        ).properties(
+            title=altair.TitleParams(
+                ['Population data for 2020 from ONS',
+                'Vaccination data from HSCNI and NHS England',
+                'https://twitter.com/ni_covid19_data on %s' %today.strftime('%Y-%m-%d')],
+                baseline='bottom',
+                orient='bottom',
+                anchor='end',
+                fontWeight='normal',
+                fontSize=10,
+                dy=10
+            ),
+        )
+        plotname = 'vacc-ni-eng-%s-2-%s.png'%(value,today.strftime('%Y-%m-%d'))
+        plotstore = io.BytesIO()
+        p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+        plotstore.seek(0)
+        plots.append({'name': plotname, 'store': plotstore})
     return plots
 
 class GroupMatch:
@@ -747,7 +745,7 @@ def lambda_handler(event, context):
                 driver.get(url)
                 postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
                 plots = make_postcode_plots(driver, postcodes, plots, today, event['Last Updated'])
-            elif today.weekday() == 0: # Monday - NI/Eng age band comparison
+            elif today.weekday() == 1: # Monday - NI/Eng age band comparison
                 plots = make_age_band_plots(driver, ni_age_bands, plots, today)
         except:
             logging.exception('Caught exception in scraping/plotting')
@@ -825,10 +823,8 @@ def lambda_handler(event, context):
         upload_ids = api.upload_multiple(plots)
         if event.get('testtweet') is True:
             for i in range(len(tweets)):
-                if (len(upload_ids) > 0) and (i == 0):
-                    resp = api.dm(secret['twitter_dmaccount'], tweets[0], upload_ids[0])
-                elif (len(upload_ids) > 1) and (i == 1):
-                    resp = api.dm(secret['twitter_dmaccount'], tweets[1], upload_ids[-1])
+                if (len(upload_ids) > i):
+                    resp = api.dm(secret['twitter_dmaccount'], tweets[i], upload_ids[i])
                 else:
                     resp = api.dm(secret['twitter_dmaccount'], tweets[i])
             message = 'Sent test DM'
