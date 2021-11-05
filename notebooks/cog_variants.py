@@ -4,34 +4,38 @@ import datetime
 
 import pandas
 import altair
+import requests
 
 #%%
-#df = pandas.read_csv('../data/2021-05-18T16_29_53-116060678.csv')
-df = pandas.read_csv('../data/2021-05-18T16_29_53-116060678.csv')
+# Dataframe for converting between pango lineage and WHO labels
+# Get the mapping from the raw Github URL
+resp = requests.get('https://github.com/pbarber/covid19-pango-lineage-to-who-label/raw/main/mapping.json')
+# Make sure that the request was successful
+resp.raise_for_status()
+# Convert the request data to a Python dictionary
+mapping = resp.json()
+# Expand the Pango column
+mapping = pandas.DataFrame(mapping).explode('Pango lineages').reset_index(drop=True)
+
+def match(lineage, col):
+    return (col.str.slice(stop=len(lineage))==lineage)
+
+#%%
+df = pandas.read_csv('../data/2021-10-18T11_01_40-95249580.csv')
 df = df[df['adm1']=='UK-NIR']
-
-#%%
-lineage_lookup = pandas.DataFrame([
-    {'WHO label': 'Alpha', 'Pango lineage': 'B.1.1.7'},
-    {'WHO label': 'Beta', 'Pango lineage': 'B.1.351'},
-    {'WHO label': 'Gamma', 'Pango lineage': 'P.1'},
-    {'WHO label': 'Delta', 'Pango lineage': 'B.1.617.2'},
-    {'WHO label': 'Epsilon', 'Pango lineage': 'B.1.427'},
-    {'WHO label': 'Zeta', 'Pango lineage': 'P.2'},
-    {'WHO label': 'Eta', 'Pango lineage': 'B.1.525'},
-    {'WHO label': 'Theta', 'Pango lineage': 'P.3'},
-    {'WHO label': 'Iota', 'Pango lineage': 'B.1.526'},
-    {'WHO label': 'Kappa', 'Pango lineage': 'B.1.617.1'},
-    {'WHO label': 'Lambda', 'Pango lineage': 'C.37'},
-])
-
-#%%
 df['Sample Date'] = pandas.to_datetime(df['sample_date'])
 df['Week of sample'] = df['Sample Date'] - pandas.to_timedelta(df['Sample Date'].dt.dayofweek, unit='d')
-df = df.merge(lineage_lookup, how='left', left_on='lineage', right_on='Pango lineage')
+# Join the lineage data
+matches = mapping['Pango lineages'].apply(match, col=df['lineage'])
+match_idx = matches.idxmax()
+# Filter out indexes where there is no match
+match_idx[match_idx==matches.idxmin()] = pandas.NA
+df['idx'] = match_idx
+# Join to the mapping based on indexes
+df = df.merge(mapping, how='left', left_on='idx', right_index=True).drop(columns=['idx','Pango lineages'])
 df['WHO label'] = df['WHO label'].fillna('Other')
 lin_by_day = df.groupby(['Sample Date','WHO label']).size().reset_index(name='count')
-lin_by_week = df.groupby(['Week of sample','WHO label']).size().rename('count')
+lin_by_week = df.groupby(['Week of sample','lineage']).size().rename('count')
 lin_pc_by_week = lin_by_week/lin_by_week.groupby(level=0).sum()
 lin_by_week = pandas.DataFrame(lin_by_week).reset_index()
 lin_pc_by_week = pandas.DataFrame(lin_pc_by_week).reset_index()
@@ -48,24 +52,25 @@ altair.Chart(
 )
 
 #%%
+toplot = lin_by_week[(lin_by_week['Week of sample']>lin_by_week['Week of sample'].max()-pandas.to_timedelta(84, unit='d')) & (lin_by_week[lin_by_week['Week of sample']<lin_by_week['Week of sample'].max()-pandas.to_timedelta(21, unit='d'))]
 p = altair.vconcat(
     altair.Chart(
-        lin_by_week[lin_by_week['Week of sample']>lin_by_week['Week of sample'].max()-pandas.to_timedelta(84, unit='d')]
+        toplot
     ).mark_line().encode(
         x = altair.X('Week of sample:T', axis=altair.Axis(title='', labels=False, ticks=False)),
         y = altair.Y('count:Q', axis=altair.Axis(title='Samples')),
-        color='WHO label'
+        color='lineage'
     ).properties(
         height=225,
         width=800,
         title='NI COVID-19 variants identified by COG-UK over the most recent 12 weeks'
     ),
     altair.Chart(
-        lin_pc_by_week[lin_pc_by_week['Week of sample']>lin_pc_by_week['Week of sample'].max()-pandas.to_timedelta(84, unit='d')]
+        toplot
     ).mark_area().encode(
         x = 'Week of sample:T',
         y = altair.Y('sum(count):Q', axis=altair.Axis(format='%', title='% of samples')),
-        color='WHO label'
+        color='lineage'
     ).properties(
         height=225,
         width=800,
@@ -82,7 +87,7 @@ p = altair.vconcat(
         dy=10
     ),
 )
-p.save('ni-variants-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
+p.save('ni-variants-lineage-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m'))
 p
 
 #%%
