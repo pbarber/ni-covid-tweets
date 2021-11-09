@@ -830,7 +830,7 @@ def lambda_handler(event, context):
         else:
             for j in range(len(tweets)):
                 if j == 0:
-                    if len(upload_ids) > 0:
+                    if len(upload_ids) <= 4:
                         resp = api.tweet(tweets[0], media_ids=upload_ids)
                     else:
                         resp = api.tweet(tweets[0])
@@ -840,6 +840,27 @@ def lambda_handler(event, context):
                             break
                     status.put_dict(index)
                     message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
+                elif j == 1:
+                    resp = api.tweet(tweets[j], resp.id)
+                    message = 'Tweeted reply ID %s' %resp.id
+                elif j == 2:
+                    if len(upload_ids) == 6:
+                        resp = api.tweet(tweets[j], resp.id, media_ids=[upload_ids[0], upload_ids[3]])
+                    else:
+                        resp = api.tweet(tweets[j], resp.id)
+                    message = 'Tweeted reply ID %s' %resp.id
+                elif j == 3:
+                    if len(upload_ids) == 6:
+                        resp = api.tweet(tweets[j], resp.id, media_ids=[upload_ids[1], upload_ids[4]])
+                    else:
+                        resp = api.tweet(tweets[j], resp.id)
+                    message = 'Tweeted reply ID %s' %resp.id
+                elif j == 4:
+                    if len(upload_ids) == 6:
+                        resp = api.tweet(tweets[j], resp.id, media_ids=[upload_ids[2], upload_ids[5]])
+                    else:
+                        resp = api.tweet(tweets[j], resp.id)
+                    message = 'Tweeted reply ID %s' %resp.id
                 else:
                     resp = api.tweet(tweets[j], resp.id)
                     message = 'Tweeted reply ID %s' %resp.id
