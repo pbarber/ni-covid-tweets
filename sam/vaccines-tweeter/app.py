@@ -256,7 +256,7 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir, store):
     keyname = '%s/agebands.csv' % s3_dir
     datastore = update_datastore(s3, bucketname, keyname, last_updated, ni_as_reported, store)
     previous_date = datastore[datastore['Date'] < datastore['Date'].max()]['Date'].max()
-    previous = datastore[datastore['Date'] == previous_date][['Band', 'First Doses','Second Doses','Third Doses','Booster Doses']].rename(columns={'First Doses':'Previous First', 'Second Doses':'Previous Second', 'Booster Doses': 'Previous Booster'})
+    previous = datastore[datastore['Date'] == previous_date][['Band', 'First Doses','Second Doses','Third Doses','Booster Doses']].rename(columns={'First Doses':'Previous First', 'Second Doses':'Previous Second', 'Third Doses':'Previous Third', 'Booster Doses': 'Previous Booster'})
     if len(previous) > 0:
         ni_as_reported = ni_as_reported.merge(previous, how='left', on='Band')
     # Combine with the comparable population data
@@ -669,18 +669,17 @@ def make_headline_tweets(df, source, last_updated):
 
     blocks = ['','','','']
     for i in range(20):
-        if (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 2']['Total'].sum() / 1499694):
+        if (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 2']['Total'].sum() / 1597898):
             blocks[i//5] += green_block
-        elif (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 1']['Total'].sum() / 1499694):
+        elif (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 1']['Total'].sum() / 1597898):
             blocks[i//5] += white_block
         else:
             blocks[i//5] += black_block
-    tweets.append('''Proportion of NI adults (16 and over) vaccinated against COVID-19:
+    tweets.append('''Proportion of NI ages 12 and over vaccinated against COVID-19:
 
 \u2022 {pop_f:.1%} first
 \u2022 {pop_s:.1%} second
-\u2022 {pop_t:.1%} third
-\u2022 {pop_b:.1%} booster
+\u2022 {pop_b:.1%} third/booster
 
 {blocks0}
 {blocks1}
@@ -692,10 +691,9 @@ One block is one person in 20
 {green} - 2nd dose received
 {white} - 1st dose received
 {black} - no doses'''.format(
-        pop_f=latest[latest['Dose']=='Dose 1']['Total'].sum() / 1499694,
-        pop_s=latest[latest['Dose']=='Dose 2']['Total'].sum() / 1499694,
-        pop_t=latest[latest['Dose']=='Dose 3']['Total'].sum() / 1499694,
-        pop_b=latest[latest['Dose']=='Booster']['Total'].sum() / 1499694,
+        pop_f=latest[latest['Dose']=='Dose 1']['Total'].sum() / 1597898,
+        pop_s=latest[latest['Dose']=='Dose 2']['Total'].sum() / 1597898,
+        pop_b=(latest[latest['Dose']=='Dose 3']['Total'].sum()+latest[latest['Dose']=='Booster']['Total'].sum()) / 1597898,
         blocks0=blocks[0],
         blocks1=blocks[1],
         blocks2=blocks[2],
@@ -791,26 +789,28 @@ def lambda_handler(event, context):
                             new=int(change),
                         )
                         first = False
-            tweets.append('NI COVID-19 booster doses by age band\n\n')
+            tweets.append('NI COVID-19 third/booster doses by age band\n\n')
             first = True
             for _,data in ni_age_bands_reported.to_dict('index').items():
-                if data['Booster Doses'] > 0:
+                if (data['Third Doses'] + data['Booster Doses']) > 0:
                     fstring = '\u2022 {band}: {pct_done:.1%}'
                     if first:
                         fstring += ' of total'
-                    if ('Previous Booster' in data) and (not pandas.isna(data['Second Doses'])):
+                    if ('Previous Booster' in data) and (not pandas.isna(data['Booster Doses'])) and ('Previous Third' in data) and (not pandas.isna(data['Third Doses'])):
                         fstring += ', {new:,}'
                         if first:
                             fstring += ' new'
                     fstring += '\n'
-                    if not pandas.isna(data['Booster Doses']):
-                        if pandas.isna(data.get('Previous Booster',0)):
+                    if not pandas.isna(data['Third Doses']) and not pandas.isna(data['Booster Doses']):
+                        if pandas.isna(data.get('Previous Third',0)):
+                            change = 0
+                        elif pandas.isna(data.get('Previous Booster',0)):
                             change = 0
                         else:
-                            change = data['Booster Doses']-data.get('Previous Booster',0)
+                            change = data['Third Doses']+data['Booster Doses']-data.get('Previous Third',0)-data.get('Previous Booster',0)
                         tweets[-1] += fstring.format(
                             band=data['Band'],
-                            pct_done=data['Booster Doses']/data['Population'],
+                            pct_done=(data['Third Doses']+data['Booster Doses'])/data['Population'],
                             new=int(change),
                         )
                         first = False
