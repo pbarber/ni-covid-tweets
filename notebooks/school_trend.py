@@ -42,11 +42,18 @@ case_band_mapping = pandas.DataFrame({
             'Parent', 'Primary', 'Other', 'Other',
             'Over 60', 'Over 60', 'Over 60', 'Over 60',
             'Over 60', 'Other'
+        ],
+        '10 Year Group': [
+            '0 - 4', '10 - 14', '15 - 19', '20 - 29',
+            '20 - 29', '30 - 39', '30 - 39', '40 - 49',
+            '40 - 49', '5 - 9', '50 - 59', '50 - 59',
+            '60 - 69', '60 - 69', '70+', '70+',
+            '70+', 'Not Known'
         ]
     })
 
 # %%
-admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-031021.xlsx', sheet_name='Admissions')
+admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-17112021.xlsx', sheet_name='Admissions')
 admissions = admissions.groupby(['Admission Date', 'Age Band'])['Number of Admissions'].sum().reset_index()
 admissions['Admission Date'] = pandas.to_datetime(admissions['Admission Date'])
 admissions = load_grouped_time_series(admissions, 'Admission Date', 'Age Band', 'Number of Admissions', 'Admissions', False)
@@ -54,7 +61,7 @@ admissions = admissions.merge(adm_band_mapping, how='left', on='Age Band')
 admissions['Admissions 7-day rolling'] = admissions['Admissions 7-day rolling mean'] * 7
 
 # %%
-altair.Chart(admissions[admissions['Date'] > '2021-07-01']).mark_line().encode(
+altair.Chart(admissions[(admissions['Group'] == '0 - 19')]).mark_line().encode(
     x = 'Date:T',
     y = altair.Y(
         field='Admissions 7-day rolling mean',
@@ -63,6 +70,9 @@ altair.Chart(admissions[admissions['Date'] > '2021-07-01']).mark_line().encode(
         axis=altair.Axis(title='Admissions per day (7 day average)'),
     ),
     color = 'Group:N'
+).properties(
+    height=450,
+    width=800
 )
 
 # %%
@@ -84,17 +94,17 @@ cases['Positive per 100k'] = (100000 * cases['Positive_Tests']) / cases['Populat
 overlay = cases[cases['Date'] == cases['Date'].max()]
 overlay['Nearest'] = ((overlay['Positive_Tests']/overlay['Positive_Tests'].max()) * 40).astype(int) * (overlay['Positive_Tests'].max() / 40)
 #overlay['Nearest'] = overlay['Nearest'].where(overlay['Band Start'] == 5)
-overlay.loc[overlay['Band Start'] == 0, 'Nearest'] = 220
-overlay.loc[overlay['Band Start'] == 5, 'Nearest'] = 900
-overlay.loc[overlay['Band Start'] == 20, 'Nearest'] = 300
-overlay.loc[overlay['Band Start'] == 25, 'Nearest'] = 380
-overlay.loc[overlay['Band Start'] == 30, 'Nearest'] = 460
-overlay.loc[overlay['Band Start'] == 40, 'Nearest'] = 680
-overlay.loc[overlay['Band Start'] == 50, 'Nearest'] = 420
-overlay.loc[overlay['Band Start'] == 55, 'Nearest'] = 340
-overlay.loc[overlay['Band Start'] == 60, 'Nearest'] = 260
-overlay.loc[overlay['Band Start'] == 65, 'Nearest'] = 90
-overlay.loc[overlay['Band Start'] == 75, 'Nearest'] = 50
+#overlay.loc[overlay['Band Start'] == 0, 'Nearest'] = 220
+#overlay.loc[overlay['Band Start'] == 5, 'Nearest'] = 900
+#overlay.loc[overlay['Band Start'] == 20, 'Nearest'] = 300
+#overlay.loc[overlay['Band Start'] == 25, 'Nearest'] = 380
+#overlay.loc[overlay['Band Start'] == 30, 'Nearest'] = 460
+#overlay.loc[overlay['Band Start'] == 40, 'Nearest'] = 680
+#overlay.loc[overlay['Band Start'] == 50, 'Nearest'] = 420
+#overlay.loc[overlay['Band Start'] == 55, 'Nearest'] = 340
+#overlay.loc[overlay['Band Start'] == 60, 'Nearest'] = 260
+#overlay.loc[overlay['Band Start'] == 65, 'Nearest'] = 90
+#overlay.loc[overlay['Band Start'] == 75, 'Nearest'] = 50
 
 trend = altair.Chart(cases).mark_line().encode(
     x = 'Date:T',
@@ -191,7 +201,7 @@ def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, lates
             color,
             legend=None
         ),
-        text = altair.Text('Broad Group')
+        text = altair.Text(color)
     )
 
     return altair.concat(
@@ -225,8 +235,6 @@ cases_broad['Positivity_Rate'] = cases_broad['Positive_Tests'] / cases_broad['To
 overlay = cases_broad[cases_broad['Date'] == cases_broad['Date'].max()]
 overlay['Nearest'] = overlay['Positive per 100k']
 overlay['Nearest_PR'] = overlay['Positivity_Rate']
-overlay.loc[overlay['Broad Group'] == 'Primary', 'Nearest'] = 600
-overlay.loc[overlay['Broad Group'] == 'Other', 'Nearest'] = 300
 overlay['Nearest_Tests'] = overlay['Tests per 100k']
 
 plt = plot_timelines_with_latest(
@@ -248,9 +256,6 @@ plt.save('ni-age-band-100k-cases-%s.png'%(datetime.datetime.now().date().strftim
 plt
 
 # %%
-overlay.loc[overlay['Broad Group'] == 'Other', 'Nearest_PR'] = 0.07
-overlay.loc[overlay['Broad Group'] == 'Parent', 'Nearest_PR'] = 0.105
-
 plt = plot_timelines_with_latest(
     cases_broad,
     'Date:T',
@@ -291,6 +296,34 @@ plt
 # %%
 overlay['One in N'] = 100000 / overlay['Positive per 100k']
 overlay
+
+# %%
+cases_10yr = cases.groupby(['Date','10 Year Group']).sum().reset_index()
+cases_10yr['Positive per 100k'] = (100000 * cases_10yr['Positive_Tests']) / cases_10yr['Population']
+cases_10yr['Tests per 100k'] = (100000 * cases_10yr['Total_Tests']) / cases_10yr['Population']
+cases_10yr['Positivity_Rate'] = cases_10yr['Positive_Tests'] / cases_10yr['Total_Tests']
+overlay_10yr = cases_10yr[cases_10yr['Date'] == cases_10yr['Date'].max()]
+overlay_10yr['Nearest'] = overlay_10yr['Positive per 100k']
+overlay_10yr.loc[overlay_10yr['10 Year Group'] == '0 - 4', 'Nearest'] = 200
+overlay_10yr.loc[overlay_10yr['10 Year Group'] == '20 - 29', 'Nearest'] = 390
+
+plt = plot_timelines_with_latest(
+    cases_10yr,
+    'Date:T',
+    'Positive per 100k',
+    '10 Year Group:N',
+    'Positive per 100k (7 day total)',
+    ',.2r',
+    overlay_10yr,
+    'Nearest',
+    'NI COVID-19 positive cases per 100k people by age group',
+    [
+        'From DoH daily data',
+        'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+    ]
+)
+plt.save('ni-10yr-age-band-cases-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
+plt
 
 # %%
 cases_total = cases.groupby(['Date','Age_Band_5yr'])['Positive_Tests'].sum()
