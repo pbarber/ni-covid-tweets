@@ -189,8 +189,8 @@ def check_hscni(original):
 
     # Account for one day delay in reporting
     data['Last Updated'] = reportdate.isoformat()
-    data['First Doses pc'] = round((100 * data['Total First Doses']) / 1499694, 1) # NI 16 and over
-    data['Second Doses pc'] = round((100 * data['Total Second Doses']) / 1499694, 1)
+    data['First Doses pc'] = round((100 * data['Total First Doses']) / 1597898, 1) # NI 16 and over
+    data['Second Doses pc'] = round((100 * data['Total Second Doses']) / 1597898, 1)
     data['Source'] = 'HSCNI'
 
     # Do change detection
@@ -234,8 +234,8 @@ def check_phe(original):
             'Second Doses Registered': ordered[0]['cumPeopleVaccinatedSecondDoseByPublishDate'] - ordered[1]['cumPeopleVaccinatedSecondDoseByPublishDate'],
             'Source': 'PHE'
         }
-        data['First Doses pc'] = round((100 * data['Total First Doses']) / 1499694, 1)  # NI 16 and over
-        data['Second Doses pc'] = round((100 * data['Total Second Doses']) / 1499694, 1)
+        data['First Doses pc'] = round((100 * data['Total First Doses']) / 1597898, 1)  # NI 16 and over
+        data['Second Doses pc'] = round((100 * data['Total Second Doses']) / 1597898, 1)
         if len(previous) > 0:
             if (data['Last Updated'] > previous[0]['Last Updated']):
                 previous.insert(0, data)
