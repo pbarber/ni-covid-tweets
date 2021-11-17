@@ -744,7 +744,7 @@ def lambda_handler(event, context):
                 driver.get(url)
                 postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
                 plots = make_postcode_plots(driver, postcodes, plots, today, event['Last Updated'])
-            elif today.weekday() == 2: # Monday - NI/Eng age band comparison
+            elif today.weekday() == 0: # Monday - NI/Eng age band comparison
                 plots = make_age_band_plots(driver, ni_age_bands, plots, today)
         except:
             logging.exception('Caught exception in scraping/plotting')
