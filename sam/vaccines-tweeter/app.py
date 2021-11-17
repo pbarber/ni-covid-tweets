@@ -45,14 +45,16 @@ ni_age_bands_lookup = pandas.DataFrame([
 
 # List of comparable age bands, with ordering for plotting
 all_age_bands_lookup = pandas.DataFrame([
-    {'Order': 0, 'NI bands': ['Under 12', '12-15', '16-17'], 'Band': 'Under 18', 'Ages': [i for i in range(18)], 'Eng bands': ['Under 18']},
-    {'Order': 1, 'NI bands': ['18-29'], 'Band': '18-29', 'Ages': [i for i in range(18,30)], 'Eng bands': ['18-24','25-29']},
-    {'Order': 2, 'NI bands': ['30-39'], 'Band': '30-39', 'Ages': [i for i in range(30,40)], 'Eng bands': ['30-34','35-39']},
-    {'Order': 3, 'NI bands': ['40-49'], 'Band': '40-49', 'Ages': [i for i in range(40,50)], 'Eng bands': ['40-44','45-49']},
-    {'Order': 4, 'NI bands': ['50-59'], 'Band': '50-59', 'Ages': [i for i in range(50,60)], 'Eng bands': ['50-54','55-59']},
-    {'Order': 5, 'NI bands': ['60-69'], 'Band': '60-69', 'Ages': [i for i in range(60,70)], 'Eng bands': ['60-64','65-69']},
-    {'Order': 6, 'NI bands': ['70-79'], 'Band': '70-79', 'Ages': [i for i in range(70,80)], 'Eng bands': ['70-74','75-79']},
-    {'Order': 7, 'NI bands': ['80+'], 'Band': '80+', 'Ages': [i for i in range(80,91)], 'Eng bands': ['80+']},
+    {'Order': 0, 'NI bands': ['Under 12'], 'Band': 'Under 12', 'Ages': [i for i in range(12)], 'Eng bands': ['Under 12']},
+    {'Order': 1, 'NI bands': ['12-15'], 'Band': '12-15', 'Ages': [i for i in range(12,16)], 'Eng bands': ['12-15']},
+    {'Order': 2, 'NI bands': ['16-17'], 'Band': '16-17', 'Ages': [i for i in range(16,18)], 'Eng bands': ['16-17']},
+    {'Order': 3, 'NI bands': ['18-29'], 'Band': '18-29', 'Ages': [i for i in range(18,30)], 'Eng bands': ['18-24','25-29']},
+    {'Order': 4, 'NI bands': ['30-39'], 'Band': '30-39', 'Ages': [i for i in range(30,40)], 'Eng bands': ['30-34','35-39']},
+    {'Order': 5, 'NI bands': ['40-49'], 'Band': '40-49', 'Ages': [i for i in range(40,50)], 'Eng bands': ['40-44','45-49']},
+    {'Order': 6, 'NI bands': ['50-59'], 'Band': '50-59', 'Ages': [i for i in range(50,60)], 'Eng bands': ['50-54','55-59']},
+    {'Order': 7, 'NI bands': ['60-69'], 'Band': '60-69', 'Ages': [i for i in range(60,70)], 'Eng bands': ['60-64','65-69']},
+    {'Order': 8, 'NI bands': ['70-79'], 'Band': '70-79', 'Ages': [i for i in range(70,80)], 'Eng bands': ['70-74','75-79']},
+    {'Order': 9, 'NI bands': ['80+'], 'Band': '80+', 'Ages': [i for i in range(80,91)], 'Eng bands': ['80+']},
 ])
 
 def get_ni_comparable_population_age_bands():
@@ -742,7 +744,7 @@ def lambda_handler(event, context):
                 driver.get(url)
                 postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
                 plots = make_postcode_plots(driver, postcodes, plots, today, event['Last Updated'])
-            elif today.weekday() == 1: # Monday - NI/Eng age band comparison
+            elif today.weekday() == 2: # Monday - NI/Eng age band comparison
                 plots = make_age_band_plots(driver, ni_age_bands, plots, today)
         except:
             logging.exception('Caught exception in scraping/plotting')
