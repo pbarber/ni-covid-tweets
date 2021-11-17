@@ -88,7 +88,7 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check):
     while (len(excels) < files_to_check) or ((files_to_check == 0)):
         url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(date_to_try.strftime("%B").lower(),date_to_try.year)
         try:
-            excels.extend(extract_doh_file_list(get_url(session, url, 'text'), files_to_check-len(excels), r'-(\d{6}).*\.xlsx$'))
+            excels.extend(extract_doh_file_list(get_url(session, url, 'text'), files_to_check-len(excels), r'-(\d{8}).*\.xlsx$', datefmt='%d%m%Y'))
         except requests.exceptions.HTTPError as err:
             if err.response.status_code == 404:
                 if len(excels) == 0:
@@ -326,8 +326,10 @@ def check_for_nisra_files(s3client, bucket, previous):
         raise Exception('Failed to find link to deaths records at %s' %url)
     if durl.startswith('/'):
         durl = 'https://www.nisra.gov.uk' + durl
+    print(durl)
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly_Deaths%20-%20w%20e%2019th%20March%202021.XLSX
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly-Deaths-we-17-September-2021.XLSX
+    # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly_Deaths%20-%20w%20e%205th%20November%202021.XLSX
     excels = extract_doh_file_list(get_url(session,durl,'text'), 1, r'w(%20)*e(%20|-)(\d+[a-z]*(%20|-)[A-Za-z]+(%20|-)\d+).*\.(?:xlsx|XLSX)$', [r'(\d)(st|nd|rd|th)', r'\1'], r'%d-%B-%Y', matchgroup=3)
     # Merge the new data into the previous list and detect changes
     index, changes = check_file_list_against_previous(excels, previous)
