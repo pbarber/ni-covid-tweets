@@ -556,37 +556,7 @@ def make_postcode_plots(driver, datastore, plots, today, last_updated):
     p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
     plotstore.seek(0)
     plots.append({'name': plotname, 'store': plotstore})
-    # Create the row chart for vaccinations not taken up
-    p = altair.vconcat(
-        altair.Chart(
-            df[(df['Potential vaccinations'] > 0) & (df['Postcode District'] != 'NI')]
-        ).mark_bar().encode(
-            x = altair.X('Potential vaccinations:Q'),
-            y = altair.Y('Postcode District:O', sort='-x'),
-            color = altair.Color('colour:N', legend=None),
-        ).properties(
-            height=1000,
-            width=450,
-            title='Potential NI COVID-19 Vaccinations by Postcode District up to %s' %datetime.datetime.strptime(last_updated,'%Y-%m-%d').strftime('%-d %B %Y')
-        ),
-    ).properties(
-        title=altair.TitleParams(
-            ['Vaccinations data from HSCNI COVID-19 dashboard, mid-2018 populations from NISRA',
-            'Potential vaccinations is an estimate of how many doses to fully vaccinate all over 20s',
-            'https://twitter.com/ni_covid19_data on %s'  %today.strftime('%A %-d %B %Y')],
-            baseline='bottom',
-            orient='bottom',
-            anchor='end',
-            fontWeight='normal',
-            fontSize=10,
-            dy=10
-        ),
-    )
-    plotname = 'vacc-postcodes-not-given-%s.png'%today.strftime('%Y-%m-%d')
-    plotstore = io.BytesIO()
-    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
-    plotstore.seek(0)
-    plots.append({'name': plotname, 'store': plotstore})
+    # Create the row chart for most recent week
     last_reported = datastore[datastore['Date']!=datastore['Date'].max()]
     last_reported = last_reported[last_reported['Date']==last_reported['Date'].max()]
     last_reported.drop(columns='Date', inplace=True)
