@@ -28,7 +28,7 @@ def launch_lambda_async(functionname, payload):
     )
 
 def get_url(session, url, format):
-    resp = session.get(url)
+    resp = session.get(url, headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'})
     resp.raise_for_status()
     if format=='text':
         return(resp.text)
