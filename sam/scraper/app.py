@@ -86,7 +86,7 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check):
     date_to_try = datetime.datetime.today()
     # Pull last month's as well, if we need to, to ensure we always have N days of data checked, or just get everything
     while (len(excels) < files_to_check) or ((files_to_check == 0)):
-        url = 'https://www.health-ni.gov.uk/publications/daily-dashboard-updates-covid-19-%s-%d' %(date_to_try.strftime("%B").lower(),date_to_try.year)
+        url = 'https://www.health-ni.gov.uk/Daily%%20dashboard%%20updates%%20on%%20COVID-19%%20-%%20%s%%20%d' %(date_to_try.strftime("%B").lower(),date_to_try.year)
         try:
             excels.extend(extract_doh_file_list(get_url(session, url, 'text'), files_to_check-len(excels), r'-(\d{6}).*\.xlsx$', datefmt='%d%m%y'))
         except requests.exceptions.HTTPError as err:
