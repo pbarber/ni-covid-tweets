@@ -53,7 +53,7 @@ case_band_mapping = pandas.DataFrame({
     })
 
 # %%
-admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-17112021.xlsx', sheet_name='Admissions')
+admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-071221.xlsx', sheet_name='Admissions')
 admissions = admissions.groupby(['Admission Date', 'Age Band'])['Number of Admissions'].sum().reset_index()
 admissions['Admission Date'] = pandas.to_datetime(admissions['Admission Date'])
 admissions = load_grouped_time_series(admissions, 'Admission Date', 'Age Band', 'Number of Admissions', 'Admissions', False)
@@ -70,6 +70,21 @@ altair.Chart(admissions[(admissions['Group'] == '0 - 19')]).mark_line().encode(
         axis=altair.Axis(title='Admissions per day (7 day average)'),
     ),
     color = 'Group:N'
+).properties(
+    height=450,
+    width=800
+)
+
+# %%
+altair.Chart(admissions[admissions['Date'] > (admissions['Date'].max() + pandas.DateOffset(-42))]).mark_line().encode(
+    x = 'Date:T',
+    y = altair.Y(
+        field='Admissions 7-day rolling mean',
+        type='quantitative',
+        aggregate='sum',
+        axis=altair.Axis(title='Admissions per day (7 day average)'),
+    ),
+    color = 'Age Band:N'
 ).properties(
     height=450,
     width=800
@@ -302,13 +317,16 @@ cases_10yr = cases.groupby(['Date','10 Year Group']).sum().reset_index()
 cases_10yr['Positive per 100k'] = (100000 * cases_10yr['Positive_Tests']) / cases_10yr['Population']
 cases_10yr['Tests per 100k'] = (100000 * cases_10yr['Total_Tests']) / cases_10yr['Population']
 cases_10yr['Positivity_Rate'] = cases_10yr['Positive_Tests'] / cases_10yr['Total_Tests']
+cases_10yr['Date'] = pandas.to_datetime(cases_10yr['Date'])
+cases_10yr['Cumulative Positive per 100k'] = cases_10yr.groupby('10 Year Group')['Positive per 100k'].cumsum() / 7.0
 overlay_10yr = cases_10yr[cases_10yr['Date'] == cases_10yr['Date'].max()]
 overlay_10yr['Nearest'] = overlay_10yr['Positive per 100k']
-overlay_10yr.loc[overlay_10yr['10 Year Group'] == '0 - 4', 'Nearest'] = 200
-overlay_10yr.loc[overlay_10yr['10 Year Group'] == '20 - 29', 'Nearest'] = 390
+#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '0 - 4', 'Nearest'] = 310
+#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '20 - 29', 'Nearest'] = 480
+#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '40 - 49', 'Nearest'] = 810
 
 plt = plot_timelines_with_latest(
-    cases_10yr,
+    cases_10yr[cases_10yr['Date'] > (cases_10yr['Date'].max() + pandas.DateOffset(days=-42))],
     'Date:T',
     'Positive per 100k',
     '10 Year Group:N',
@@ -316,7 +334,7 @@ plt = plot_timelines_with_latest(
     ',.2r',
     overlay_10yr,
     'Nearest',
-    'NI COVID-19 positive cases per 100k people by age group',
+    'NI COVID-19 positive cases per 100k people by age group (last six weeks)',
     [
         'From DoH daily data',
         'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
@@ -416,3 +434,25 @@ cases
 cases.groupby('Date').sum()[['Positive_Tests','Total_Tests']]
 # %%
 summ = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-081021.xlsx', sheet_name='Summary Tests')
+
+# %%
+plt = plot_timelines_with_latest(
+    cases_10yr[cases_10yr['Date'] > (cases_10yr['Date'].max() + pandas.DateOffset(days=-42))],
+    'Date:T',
+    'Cumulative Positive per 100k',
+    '10 Year Group:N',
+    'Cumulative Positive per 100k',
+    ',.2r',
+    overlay_10yr,
+    'Cumulative Positive per 100k',
+    'NI COVID-19 cumulative positive cases per 100k people by age group (last six weeks)',
+    [
+        'From DoH daily data',
+        'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+    ]
+)
+plt.save('ni-10yr-age-band-cum-cases-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
+plt
+
+# %%
+overlay_10yr[['10 Year Group','Cumulative Positive per 100k']]

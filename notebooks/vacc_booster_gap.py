@@ -76,7 +76,7 @@ p = plot_points_average_and_trend(
     [
         {
             'points': None,
-            'line': boosters[boosters['Metric'] != 'Second doses 6 months earlier'].set_index(['Publication Date','Metric'])['Doses'],
+            'line': boosters.set_index(['Publication Date','Metric'])['Doses'],
             'colour': 'Metric',
             'date_col': 'Publication Date',
             'x_title': 'Date',
