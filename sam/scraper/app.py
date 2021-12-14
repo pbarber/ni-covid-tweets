@@ -8,6 +8,7 @@ from copy import deepcopy
 import requests
 from bs4 import BeautifulSoup
 import boto3
+from user_agent import generate_user_agent
 
 from shared import S3_scraper_index, launch_lambda_async, get_url, get_and_sort_index
 
@@ -94,6 +95,7 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check):
                         session,
                         url,
                         'text',
+                        useragent=generate_user_agent(),
                         referer='https://www.health-ni.gov.uk/articles/covid-19-daily-dashboard-updates'
                     ),
                     files_to_check-len(excels),
@@ -126,6 +128,7 @@ def check_for_r_files(s3client, bucket, previous):
             session,
             url,
             'text',
+            useragent=generate_user_agent(),
             referer='https://www.health-ni.gov.uk/'
         ),
         1,
@@ -342,6 +345,7 @@ def check_for_nisra_files(s3client, bucket, previous):
             session,
             url,
             'text',
+            useragent=generate_user_agent(),
             referer='https://www.nisra.gov.uk/statistics/ni-summary-statistics/coronavirus-covid-19-statistics'
         )
         ,features="html.parser")
@@ -362,6 +366,7 @@ def check_for_nisra_files(s3client, bucket, previous):
             session,
             durl,
             'text',
+            useragent=generate_user_agent(),
             referer=url
         ),
         1,
