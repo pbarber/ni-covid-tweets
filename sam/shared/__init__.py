@@ -1,6 +1,7 @@
 import json
 
 import boto3
+from user_agent import generate_user_agent
 
 class S3_scraper_index:
     def __init__(self, client, bucketname, keyname):
@@ -27,8 +28,18 @@ def launch_lambda_async(functionname, payload):
         Payload=json.dumps(payload)
     )
 
-def get_url(session, url, format):
-    resp = session.get(url, headers={'Cache-Control': 'no-cache', 'Pragma': 'no-cache'})
+def get_url(session, url, format, referer=None):
+    headers = {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'User-Agent': generate_user_agent(),
+    }
+    if referer is not None:
+        headers['Referer'] = referer
+    resp = session.get(
+        url,
+        headers=headers
+    )
     resp.raise_for_status()
     if format=='text':
         return(resp.text)

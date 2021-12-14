@@ -88,7 +88,19 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check):
     while (len(excels) < files_to_check) or ((files_to_check == 0)):
         url = 'https://www.health-ni.gov.uk/Daily%%20dashboard%%20updates%%20on%%20COVID-19%%20-%%20%s%%20%d' %(date_to_try.strftime("%B").lower(),date_to_try.year)
         try:
-            excels.extend(extract_doh_file_list(get_url(session, url, 'text'), files_to_check-len(excels), r'-(\d{6}).*\.xlsx$', datefmt='%d%m%y'))
+            excels.extend(
+                extract_doh_file_list(
+                    get_url(
+                        session,
+                        url,
+                        'text',
+                        referer='https://www.health-ni.gov.uk/articles/covid-19-daily-dashboard-updates'
+                    ),
+                    files_to_check-len(excels),
+                    r'-(\d{6}).*\.xlsx$',
+                    datefmt='%d%m%y'
+                )
+            )
         except requests.exceptions.HTTPError as err:
             if err.response.status_code == 404:
                 if len(excels) == 0:
@@ -109,7 +121,16 @@ def check_for_r_files(s3client, bucket, previous):
     session = requests.Session()
     # Attempt to pull the list of R number publications
     url = 'https://www.health-ni.gov.uk/R-Number'
-    pdfs = extract_doh_file_list(get_url(session, url,'text'), 1, r'-(\d{6}).*\.pdf$')
+    pdfs = extract_doh_file_list(
+        get_url(
+            session,
+            url,
+            'text',
+            referer='https://www.health-ni.gov.uk/'
+        ),
+        1,
+        r'-(\d{6}).*\.pdf$'
+    )
     # Merge the new data into the previous list and detect changes
     index, changes = check_file_list_against_previous(pdfs, previous)
     # Upload the changed files to s3
@@ -316,7 +337,14 @@ def check_for_nisra_files(s3client, bucket, previous):
 
     # Attempt to pull the link to this week's publications
     url = 'https://www.nisra.gov.uk/statistics/death-statistics/weekly-death-registrations-northern-ireland'
-    html = BeautifulSoup(get_url(session,url,'text'),features="html.parser")
+    html = BeautifulSoup(
+        get_url(
+            session,
+            url,
+            'text',
+            referer='https://www.nisra.gov.uk/statistics/ni-summary-statistics/coronavirus-covid-19-statistics'
+        )
+        ,features="html.parser")
     durl = None
     for a in html.find_all('a', href=True):
         if a.text.strip() == 'Latest Weekly Deaths Bulletin':
@@ -326,11 +354,22 @@ def check_for_nisra_files(s3client, bucket, previous):
         raise Exception('Failed to find link to deaths records at %s' %url)
     if durl.startswith('/'):
         durl = 'https://www.nisra.gov.uk' + durl
-    print(durl)
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly_Deaths%20-%20w%20e%2019th%20March%202021.XLSX
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly-Deaths-we-17-September-2021.XLSX
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly_Deaths%20-%20w%20e%205th%20November%202021.XLSX
-    excels = extract_doh_file_list(get_url(session,durl,'text'), 1, r'w(%20)*e(%20|-)(\d+[a-z]*(%20|-)[A-Za-z]+(%20|-)\d+).*\.(?:xlsx|XLSX)$', [r'(\d)(st|nd|rd|th)', r'\1'], r'%d-%B-%Y', matchgroup=3)
+    excels = extract_doh_file_list(
+        get_url(
+            session,
+            durl,
+            'text',
+            referer=url
+        ),
+        1,
+        r'w(%20)*e(%20|-)(\d+[a-z]*(%20|-)[A-Za-z]+(%20|-)\d+).*\.(?:xlsx|XLSX)$',
+        [r'(\d)(st|nd|rd|th)', r'\1'],
+        r'%d-%B-%Y',
+        matchgroup=3
+    )
     # Merge the new data into the previous list and detect changes
     index, changes = check_file_list_against_previous(excels, previous)
     # Upload the changed files to s3
