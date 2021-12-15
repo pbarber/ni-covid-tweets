@@ -27,7 +27,7 @@ def launch_lambda_async(functionname, payload):
         Payload=json.dumps(payload)
     )
 
-def get_url(session, url, format, useragent=None, referer=None):
+def get_url(session, url, format, useragent=None, referer=None, upgradeinsecure=False):
     headers = {
         'Cache-Control': 'no-cache',
         'Pragma': 'no-cache',
@@ -36,11 +36,17 @@ def get_url(session, url, format, useragent=None, referer=None):
         headers['User-Agent'] = useragent
     if referer is not None:
         headers['Referer'] = referer
+    if upgradeinsecure is True:
+        headers['Upgrade-Insecure-Requests'] = '1'
+        headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
+        headers['Accept-Language'] = 'en-US,en;q=0.5'
     resp = session.get(
         url,
         headers=headers
     )
     resp.raise_for_status()
+    if upgradeinsecure is True:
+        print(resp.request.headers)
     if format=='text':
         return(resp.text)
     elif format=='content':

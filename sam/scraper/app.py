@@ -17,6 +17,7 @@ def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y',element=
     files = []
     regex = re.compile(regex, flags=re.IGNORECASE)
     for nigovfile in html.find_all(element, {"class": htmlclass}):
+        print(nigovfile.text)
         for a in nigovfile.find_all('a', href=True):
             m = regex.search(a['href'])
             if m:
@@ -80,8 +81,16 @@ def upload_changes_to_s3(s3client, bucket, dirname, index, changes, fileext):
         index[change['index']]['keyname'] = keyname
     return index
 
-def check_for_dd_files(s3client, bucket, previous, files_to_check):
+def check_for_dd_files(s3client, bucket, previous, files_to_check, store=True):
     session = requests.Session()
+    session.headers = {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'User-Agent': generate_user_agent(),
+        'Upgrade-Insecure-Requests': '1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+    }
     # Attempt to pull this month's list of daily data publications
     excels = []
     date_to_try = datetime.datetime.today()
@@ -95,8 +104,6 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check):
                         session,
                         url,
                         'text',
-                        useragent=generate_user_agent(),
-                        referer='https://www.health-ni.gov.uk/articles/covid-19-daily-dashboard-updates'
                     ),
                     files_to_check-len(excels),
                     r'-(\d{6}).*\.xlsx$',
@@ -155,7 +162,7 @@ def check_doh(secret, s3, notweet, mode):
 
     # Check the DoH site for file changes
     if mode=='dd':
-        current, changes = check_for_dd_files(s3, secret['bucketname'], previous, int(secret['doh-dd-files-to-check']))
+        current, changes = check_for_dd_files(s3, secret['bucketname'], previous, int(secret['doh-dd-files-to-check']), store=(not notweet))
     else:
         current, changes = check_for_r_files(s3, secret['bucketname'], previous)
 
