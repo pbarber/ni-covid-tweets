@@ -17,7 +17,6 @@ def extract_doh_file_list(text,number,regex,datesub=[],datefmt='%d%m%y',element=
     files = []
     regex = re.compile(regex, flags=re.IGNORECASE)
     for nigovfile in html.find_all(element, {"class": htmlclass}):
-        print(nigovfile.text)
         for a in nigovfile.find_all('a', href=True):
             m = regex.search(a['href'])
             if m:
@@ -91,12 +90,19 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check, store=True):
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
     }
+    html = BeautifulSoup(get_url(session, 'https://www.health-ni.gov.uk/articles/covid-19-daily-dashboard-updates', 'text'),features="html.parser")
+    durl = None
+    for a in html.find_all('a', href=True):
+        if a.text.strip().lower().startswith('latest pdf version'):
+            durl = a['href']
+    if durl is None:
+        raise('Unable to find starting URL')
+    url = 'https://www.health-ni.gov.uk/' + durl.lstrip('/')
     # Attempt to pull this month's list of daily data publications
     excels = []
     date_to_try = datetime.datetime.today()
     # Pull last month's as well, if we need to, to ensure we always have N days of data checked, or just get everything
     while (len(excels) < files_to_check) or ((files_to_check == 0)):
-        url = 'https://www.health-ni.gov.uk/Daily%%20dashboard%%20updates%%20on%%20COVID-19%%20-%%20%s%%20%d' %(date_to_try.strftime("%B").lower(),date_to_try.year)
         try:
             excels.extend(
                 extract_doh_file_list(
@@ -120,6 +126,7 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check, store=True):
             else:
                 raise err
         date_to_try = date_to_try.replace(day=1) - datetime.timedelta(days=1)
+        url = 'https://www.health-ni.gov.uk/Daily%%20dashboard%%20updates%%20on%%20COVID-19%%20-%%20%s%%20%d' %(date_to_try.strftime("%B").lower(),date_to_try.year)
     # Merge the new data into the previous list and detect changes
     index, changes = check_file_list_against_previous(excels, previous)
     # Upload the changed files to s3
