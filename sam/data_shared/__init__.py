@@ -51,3 +51,17 @@ def push_csv_to_s3(df, s3, bucketname, keyname):
     df.to_csv(stream, index=False)
     stream.seek(0)
     s3.upload_fileobj(stream, bucketname, keyname)
+
+def update_datastore(s3, bucketname, keyname, last_updated, df, store, datecol='Date'):
+    # Pull current data from s3, or empty dataframe
+    datastore = get_s3_csv_or_empty_df(s3, bucketname, keyname, [datecol])
+    # Clean out any data with matching dates
+    datastore = datastore[datastore[datecol] != last_updated]
+    # Append the new data
+    datastore = pandas.concat([datastore, df])
+    datastore[datecol] = datastore[datecol].fillna(last_updated)
+    datastore[datecol] = pandas.to_datetime(datastore[datecol])
+    # Push the data to s3
+    if store is True:
+        push_csv_to_s3(datastore, s3, bucketname, keyname)
+    return datastore

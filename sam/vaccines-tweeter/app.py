@@ -20,7 +20,7 @@ import altair
 from shared import S3_scraper_index, get_url
 from twitter_shared import TwitterAPI
 from plot_shared import get_chrome_driver
-from data_shared import get_eng_pop_pyramid, get_ni_pop_pyramid
+from data_shared import get_eng_pop_pyramid, get_ni_pop_pyramid, update_datastore
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -140,30 +140,6 @@ def pbi_goto_page(driver, pagenum):
         WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CSS_SELECTOR, ".pbi-glyph-chevronrightmedium")))
         time.sleep(3.0 + 3*(random.random()))
         driver.find_element_by_css_selector(".pbi-glyph-chevronrightmedium").click()
-
-def update_datastore(s3, bucketname, keyname, last_updated, df, store):
-    # Pull current data from s3
-    try:
-        obj = s3.get_object(Bucket=bucketname,Key=keyname)['Body']
-    except s3.exceptions.NoSuchKey:
-        print("The object %s does not exist in bucket %s." %(keyname, bucketname))
-        datastore = pandas.DataFrame(columns=['Date'])
-    else:
-        stream = io.BytesIO(obj.read())
-        datastore = pandas.read_csv(stream)
-    # Clean out any data with matching dates
-    datastore = datastore[datastore['Date'] != last_updated]
-    # Append the new data
-    datastore = pandas.concat([datastore, df])
-    datastore['Date'] = datastore['Date'].fillna(last_updated)
-    datastore['Date'] = pandas.to_datetime(datastore['Date'])
-    # Push the data to s3
-    if store is True:
-        stream = io.BytesIO()
-        datastore.to_csv(stream, index=False)
-        stream.seek(0)
-        s3.upload_fileobj(stream, bucketname, keyname)
-    return datastore
 
 def get_ni_headline_data(driver, s3, bucketname, last_updated, s3_dir, store):
     headers = [
@@ -789,6 +765,7 @@ def lambda_handler(event, context):
     except:
         logging.exception('Caught error in age band tweet')
 
+    message = 'Failure'
     if event.get('notweet') is not True:
         api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
         upload_ids = api.upload_multiple(plots)

@@ -12,7 +12,7 @@ import altair
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
 from plot_shared import get_chrome_driver, plot_key_ni_stats_date_range, plot_points_average_and_trend, output_plot, plot_heatmap
-from data_shared import get_s3_csv_or_empty_df, push_csv_to_s3, get_ni_pop_pyramid
+from data_shared import get_ni_pop_pyramid, update_datastore
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -186,6 +186,20 @@ def lambda_handler(event, context):
         obj = s3.get_object(Bucket=secret['bucketname'],Key=change['keyname'])['Body']
         stream = io.BytesIO(obj.read())
 
+        # Load the tests sheet and add it to the store
+        daily = pandas.read_excel(stream,engine='openpyxl',sheet_name='Tests')
+        daily = daily.groupby(['Date of Specimen']).sum()[['Total Lab Tests','Individ with Lab Test','Individ with Positive Lab Test']].reset_index()
+        daily['Reported_Date'] = pandas.to_datetime(change['filedate'], format='%Y-%m-%d')
+        datastore = update_datastore(
+            s3,
+            secret['bucketname'],
+            secret['doh-dd-store-tests'],
+            daily['Reported_Date'].max(),
+            daily,
+            (change.get('notweet', False) is False) and (change.get('tweet', True) is True),
+            'Reported_Date'
+        )
+
         # Load test data and add extra fields
         df = pandas.read_excel(stream,engine='openpyxl',sheet_name='Summary Tests')
         df['pos_rate'] = df['INDIVIDUALS TESTED POSITIVE']/df['ALL INDIVIDUALS TESTED']
@@ -239,17 +253,15 @@ def lambda_handler(event, context):
         age_bands['Band End'] = age_bands['Age_Band_5yr'].str.extract('Aged \d+ - (\d+)').astype(float)
         age_bands['Date'] = df['Sample_Date'].max()
         # Get the age bands datastore contents from S3
-        s3dir = change['keyname'].split('/',maxsplit=1)[0]
-        agebands_keyname = '%s/agebands.csv' %s3dir
-        datastore = get_s3_csv_or_empty_df(s3, secret['bucketname'], agebands_keyname, ['Date'])
-        # Remove any data already recorded for the current day
-        datastore['Date'] = pandas.to_datetime(datastore['Date'])
-        if (change.get('notweet', False) is False) and (change.get('tweet', True) is True):
-            datastore = datastore[datastore['Date'] != df['Sample_Date'].max()]
-            # Append the new data
-            datastore = pandas.concat([datastore, age_bands])
-            # Send back to S3, if we are in tweet mode
-            push_csv_to_s3(datastore, s3, secret['bucketname'], agebands_keyname)
+        datastore = update_datastore(
+            s3,
+            secret['bucketname'],
+            secret['doh-dd-store-agebands'],
+            df['Sample_Date'].max(),
+            age_bands,
+            (change.get('notweet', False) is False) and (change.get('tweet', True) is True),
+            'Date'
+        )
         # Plot the case reports and 7-day average
         driver = get_chrome_driver()
         plots = []
