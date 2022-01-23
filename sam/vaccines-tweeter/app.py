@@ -654,169 +654,174 @@ One block is one person in 20
 
 
 def lambda_handler(event, context):
-    # Get the secret
-    sm = boto3.client('secretsmanager')
-    secretobj = sm.get_secret_value(SecretId='ni-covid-tweets')
-    secret = json.loads(secretobj['SecretString'])
-
-    # Get the previous data file list from S3
-    s3 = boto3.client('s3')
-    keyname = secret['shared-vacc-index']
-    status = S3_scraper_index(s3, secret['bucketname'], keyname)
-    index = status.get_dict()
-
-    tweets = []
-    plots = []
-    today = datetime.datetime.now().date()
-    driver = get_chrome_driver()
-    ni_age_bands_reported = None
-    if driver is None:
-        logging.error('Failed to start chrome')
-    else:
-        try:
-            session = requests.Session()
-            # Find the PowerBI URL from the HSCNI site
-            url = 'https://covid-19.hscni.net/ni-covid-19-vaccinations-dashboard/'
-            html = BeautifulSoup(get_url(session, url, 'text'),features="html.parser")
-            url = html.find('iframe')['src']
-            # Use selenium to get the PowerBI report
-            driver.get(url)
-            store_data = (event.get('notweet') is not True) and (event.get('testtweet') is not True)
-            s3dir = keyname.rsplit('/',maxsplit=1)[0]
-            headlines = get_ni_headline_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
-            tweets = make_headline_tweets(headlines, event['Source'], event['Last Updated'])
-            ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
-            if today.weekday() == 5: # Saturday - Vaccinations per person by postcode district
-                driver.get(url)
-                postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
-                plots = make_postcode_plots(driver, postcodes, plots, today, event['Last Updated'])
-            elif today.weekday() == 0: # Monday - NI/Eng age band comparison
-                plots = make_age_band_plots(driver, ni_age_bands, plots, today)
-        except:
-            logging.exception('Caught exception in scraping/plotting')
-    try:
-        if ni_age_bands_reported is not None:
-            tweets.append('NI COVID-19 first doses by age band\n\n')
-            first = True
-            for _,data in ni_age_bands_reported.to_dict('index').items():
-                fstring = '\u2022 {band}: {pct_done:.1%}'
-                if first:
-                    fstring += ' of total'
-                if 'Previous First' in data:
-                    fstring += ', {new:,}'
-                    if first:
-                        fstring += ' new'
-                fstring += '\n'
-                if not pandas.isna(data['First Doses']):
-                    tweets[-1] += fstring.format(
-                        band=data['Band'],
-                        pct_done=data['First Doses']/data['Population'],
-                        new=int(data['First Doses']-data.get('Previous First',0)),
-                    )
-                    first = False
-            tweets.append('NI COVID-19 second doses by age band\n\n')
-            first = True
-            for _,data in ni_age_bands_reported.to_dict('index').items():
-                if data['Second Doses'] > 0:
-                    fstring = '\u2022 {band}: {pct_done:.1%}'
-                    if first:
-                        fstring += ' of total'
-                    if ('Previous Second' in data) and (not pandas.isna(data['Second Doses'])):
-                        fstring += ', {new:,}'
-                        if first:
-                            fstring += ' new'
-                    fstring += '\n'
-                    if not pandas.isna(data['Second Doses']):
-                        if pandas.isna(data.get('Previous Second',0)):
-                            change = 0
-                        else:
-                            change = data['Second Doses']-data.get('Previous Second',0)
-                        tweets[-1] += fstring.format(
-                            band=data['Band'],
-                            pct_done=data['Second Doses']/data['Population'],
-                            new=int(change),
-                        )
-                        first = False
-            tweets.append('NI COVID-19 third/booster doses by age band\n\n')
-            first = True
-            for _,data in ni_age_bands_reported.to_dict('index').items():
-                if (data['Third Doses'] + data['Booster Doses']) > 0:
-                    fstring = '\u2022 {band}: {pct_done:.1%}'
-                    if first:
-                        fstring += ' of total'
-                    if ('Previous Booster' in data) and (not pandas.isna(data['Booster Doses'])) and ('Previous Third' in data) and (not pandas.isna(data['Third Doses'])):
-                        fstring += ', {new:,}'
-                        if first:
-                            fstring += ' new'
-                    fstring += '\n'
-                    if not pandas.isna(data['Third Doses']) and not pandas.isna(data['Booster Doses']):
-                        if pandas.isna(data.get('Previous Third',0)):
-                            change = 0
-                        elif pandas.isna(data.get('Previous Booster',0)):
-                            change = 0
-                        else:
-                            change = data['Third Doses']+data['Booster Doses']-data.get('Previous Third',0)-data.get('Previous Booster',0)
-                        tweets[-1] += fstring.format(
-                            band=data['Band'],
-                            pct_done=(data['Third Doses']+data['Booster Doses'])/data['Population'],
-                            new=int(change),
-                        )
-                        first = False
-    except:
-        logging.exception('Caught error in age band tweet')
-
     message = 'Failure'
-    if event.get('notweet') is not True:
-        api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-        upload_ids = api.upload_multiple(plots)
-        if event.get('testtweet') is True:
-            for i in range(len(tweets)):
-                if (len(upload_ids) > i):
-                    resp = api.dm(secret['twitter_dmaccount'], tweets[i], upload_ids[i])
-                else:
-                    resp = api.dm(secret['twitter_dmaccount'], tweets[i])
-            message = 'Sent test DM'
+    try:
+        # Get the secret
+        sm = boto3.client('secretsmanager')
+        secretobj = sm.get_secret_value(SecretId='ni-covid-tweets')
+        secret = json.loads(secretobj['SecretString'])
+
+        # Get the previous data file list from S3
+        s3 = boto3.client('s3')
+        keyname = secret['shared-vacc-index']
+        status = S3_scraper_index(s3, secret['bucketname'], keyname)
+        index = status.get_dict()
+
+        tweets = []
+        plots = []
+        today = datetime.datetime.now().date()
+        driver = get_chrome_driver()
+        ni_age_bands_reported = None
+        if driver is None:
+            logging.error('Failed to start chrome')
         else:
-            for j in range(len(tweets)):
-                if j == 0:
-                    if len(upload_ids) <= 4:
-                        resp = api.tweet(tweets[0], media_ids=upload_ids)
+            try:
+                session = requests.Session()
+                # Find the PowerBI URL from the HSCNI site
+                url = 'https://covid-19.hscni.net/ni-covid-19-vaccinations-dashboard/'
+                html = BeautifulSoup(get_url(session, url, 'text'),features="html.parser")
+                url = html.find('iframe')['src']
+                # Use selenium to get the PowerBI report
+                driver.get(url)
+                store_data = (event.get('notweet') is not True) and (event.get('testtweet') is not True)
+                s3dir = keyname.rsplit('/',maxsplit=1)[0]
+                headlines = get_ni_headline_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
+                tweets = make_headline_tweets(headlines, event['Source'], event['Last Updated'])
+                ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
+                if today.weekday() == 5: # Saturday - Vaccinations per person by postcode district
+                    driver.get(url)
+                    postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
+                    plots = make_postcode_plots(driver, postcodes, plots, today, event['Last Updated'])
+                elif today.weekday() == 0: # Monday - NI/Eng age band comparison
+                    plots = make_age_band_plots(driver, ni_age_bands, plots, today)
+            except:
+                logging.exception('Caught exception in scraping/plotting')
+        try:
+            if ni_age_bands_reported is not None:
+                tweets.append('NI COVID-19 first doses by age band\n\n')
+                first = True
+                for _,data in ni_age_bands_reported.to_dict('index').items():
+                    fstring = '\u2022 {band}: {pct_done:.1%}'
+                    if first:
+                        fstring += ' of total'
+                    if 'Previous First' in data:
+                        fstring += ', {new:,}'
+                        if first:
+                            fstring += ' new'
+                    fstring += '\n'
+                    if not pandas.isna(data['First Doses']):
+                        tweets[-1] += fstring.format(
+                            band=data['Band'],
+                            pct_done=data['First Doses']/data['Population'],
+                            new=int(data['First Doses']-data.get('Previous First',0)),
+                        )
+                        first = False
+                tweets.append('NI COVID-19 second doses by age band\n\n')
+                first = True
+                for _,data in ni_age_bands_reported.to_dict('index').items():
+                    if data['Second Doses'] > 0:
+                        fstring = '\u2022 {band}: {pct_done:.1%}'
+                        if first:
+                            fstring += ' of total'
+                        if ('Previous Second' in data) and (not pandas.isna(data['Second Doses'])):
+                            fstring += ', {new:,}'
+                            if first:
+                                fstring += ' new'
+                        fstring += '\n'
+                        if not pandas.isna(data['Second Doses']):
+                            if pandas.isna(data.get('Previous Second',0)):
+                                change = 0
+                            else:
+                                change = data['Second Doses']-data.get('Previous Second',0)
+                            tweets[-1] += fstring.format(
+                                band=data['Band'],
+                                pct_done=data['Second Doses']/data['Population'],
+                                new=int(change),
+                            )
+                            first = False
+                tweets.append('NI COVID-19 third/booster doses by age band\n\n')
+                first = True
+                for _,data in ni_age_bands_reported.to_dict('index').items():
+                    if (data['Third Doses'] + data['Booster Doses']) > 0:
+                        fstring = '\u2022 {band}: {pct_done:.1%}'
+                        if first:
+                            fstring += ' of total'
+                        if ('Previous Booster' in data) and (not pandas.isna(data['Booster Doses'])) and ('Previous Third' in data) and (not pandas.isna(data['Third Doses'])):
+                            fstring += ', {new:,}'
+                            if first:
+                                fstring += ' new'
+                        fstring += '\n'
+                        if not pandas.isna(data['Third Doses']) and not pandas.isna(data['Booster Doses']):
+                            if pandas.isna(data.get('Previous Third',0)):
+                                change = 0
+                            elif pandas.isna(data.get('Previous Booster',0)):
+                                change = 0
+                            else:
+                                change = data['Third Doses']+data['Booster Doses']-data.get('Previous Third',0)-data.get('Previous Booster',0)
+                            tweets[-1] += fstring.format(
+                                band=data['Band'],
+                                pct_done=(data['Third Doses']+data['Booster Doses'])/data['Population'],
+                                new=int(change),
+                            )
+                            first = False
+        except:
+            logging.exception('Caught error in age band tweet')
+
+        if event.get('notweet') is not True:
+            api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+            upload_ids = api.upload_multiple(plots)
+            if event.get('testtweet') is True:
+                for i in range(len(tweets)):
+                    if (len(upload_ids) > i):
+                        resp = api.dm(secret['twitter_dmaccount'], tweets[i], upload_ids[i])
                     else:
-                        resp = api.tweet(tweets[0])
-                    for i in range(len(index)):
-                        if index[i]['Last Updated'] == event['Last Updated']:
-                            index[i]['tweet'] = resp.id
-                            break
-                    status.put_dict(index)
-                    message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
-                elif j == 1:
-                    resp = api.tweet(tweets[j], resp.id)
-                    message = 'Tweeted reply ID %s' %resp.id
-                elif j == 2:
-                    if len(upload_ids) == 6:
-                        resp = api.tweet(tweets[j], resp.id, media_ids=[upload_ids[0], upload_ids[3]])
+                        resp = api.dm(secret['twitter_dmaccount'], tweets[i])
+                message = 'Sent test DM'
+            else:
+                for j in range(len(tweets)):
+                    if j == 0:
+                        if len(upload_ids) <= 4:
+                            resp = api.tweet(tweets[0], media_ids=upload_ids)
+                        else:
+                            resp = api.tweet(tweets[0])
+                        for i in range(len(index)):
+                            if index[i]['Last Updated'] == event['Last Updated']:
+                                index[i]['tweet'] = resp.id
+                                break
+                        status.put_dict(index)
+                        message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
+                    elif j == 1:
+                        resp = api.tweet(tweets[j], resp.id)
+                        message = 'Tweeted reply ID %s' %resp.id
+                    elif j == 2:
+                        if len(upload_ids) == 6:
+                            resp = api.tweet(tweets[j], resp.id, media_ids=[upload_ids[0], upload_ids[3]])
+                        else:
+                            resp = api.tweet(tweets[j], resp.id)
+                        message = 'Tweeted reply ID %s' %resp.id
+                    elif j == 3:
+                        if len(upload_ids) == 6:
+                            resp = api.tweet(tweets[j], resp.id, media_ids=[upload_ids[1], upload_ids[4]])
+                        else:
+                            resp = api.tweet(tweets[j], resp.id)
+                        message = 'Tweeted reply ID %s' %resp.id
+                    elif j == 4:
+                        if len(upload_ids) == 6:
+                            resp = api.tweet(tweets[j], resp.id, media_ids=[upload_ids[2], upload_ids[5]])
+                        else:
+                            resp = api.tweet(tweets[j], resp.id)
+                        message = 'Tweeted reply ID %s' %resp.id
                     else:
                         resp = api.tweet(tweets[j], resp.id)
-                    message = 'Tweeted reply ID %s' %resp.id
-                elif j == 3:
-                    if len(upload_ids) == 6:
-                        resp = api.tweet(tweets[j], resp.id, media_ids=[upload_ids[1], upload_ids[4]])
-                    else:
-                        resp = api.tweet(tweets[j], resp.id)
-                    message = 'Tweeted reply ID %s' %resp.id
-                elif j == 4:
-                    if len(upload_ids) == 6:
-                        resp = api.tweet(tweets[j], resp.id, media_ids=[upload_ids[2], upload_ids[5]])
-                    else:
-                        resp = api.tweet(tweets[j], resp.id)
-                    message = 'Tweeted reply ID %s' %resp.id
-                else:
-                    resp = api.tweet(tweets[j], resp.id)
-                    message = 'Tweeted reply ID %s' %resp.id
-    else:
-        for tweet in tweets:
-            print(tweet)
-        message = 'Did not tweet'
+                        message = 'Tweeted reply ID %s' %resp.id
+        else:
+            for tweet in tweets:
+                print(tweet)
+            message = 'Did not tweet'
+    except:
+        logging.exception('Caught error in vaccine tweeter')
+        api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
+        api.dm(secret['twitter_dmaccount'], 'Error in vaccine tweeter')
 
     return {
         "statusCode": 200,
