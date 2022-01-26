@@ -322,7 +322,7 @@ plt = plot_points_average_and_trend(
     ]
 )
 plt.save('nations-cases-100k-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
-
+plt
 
 # %%
 plt = plot_points_average_and_trend(
@@ -351,7 +351,7 @@ plt = plot_points_average_and_trend(
     ]
 )
 plt.save('wal-cases-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
-
+plt
 
 # %% NISRA mid-year LGD population estimates
 nipop = pandas.DataFrame([
@@ -370,7 +370,7 @@ nipop = pandas.DataFrame([
 ])
 
 # %% Load NI regional data
-ni = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-130821.xlsx', sheet_name='Tests')
+ni = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-221221.xlsx', sheet_name='Tests')
 ni.rename(columns={'LGD2014NAME': 'Area', 'Date of Specimen': 'Date'}, inplace=True)
 ni['Area'] = ni['Area'].fillna('Missing Postcode')
 newind = pandas.date_range(start=ni['Date'].min(), end=ni['Date'].max())
@@ -396,7 +396,7 @@ def load_ni_time_series(url, sheet_name, date_col, series_col, model=False, mode
     if model is True:
         df = create_models(df, model_group, series_col)
     return df
-url = 'https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-130821.xlsx'
+url = 'https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-221221.xlsx'
 discharges = load_ni_time_series(url,'Discharges','Discharge Date','Number of Discharges')
 admissions = load_ni_time_series(url,'Admissions','Admission Date','Number of Admissions')
 deaths = load_ni_time_series(url,'Deaths','Date of Death','Number of Deaths')
@@ -683,10 +683,10 @@ plot_multiple_trendlines(
 
 # %%
 plot_multiple_trendlines(
-    ni[ni['Date']>'2021-03-31'],
+    ni[ni['Date']>'2021-10-31'],
     y='Rolling cases per 100k',
     color='Area',
-    y_scale='log',
+    y_scale='linear',
 ).properties(
     height=450,
     width=800
@@ -702,9 +702,12 @@ plot_single_trendline_fit(ni, 'Rolling cases per 100k', 'New cases per 100k (7-d
 plot_single_trendline_fit(ni, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Area', 'Ards and North Down', 'orange', 42, 9, 1)
 
 # %%
+plot_single_trendline_fit(ni, 'Rolling cases per 100k', 'New cases per 100k (7-day rolling mean)', 'Area', 'Belfast', 'lightgreen', 42, 9, 1)
+
+# %%
 plot_single_trendline(
     ni[(ni['Date'] > '2020-12-24') & (ni['Area']=='Derry City and Strabane')],
-    y='model_daily_change',
+    y='Rolling cases per 100k model_daily_change',
     color='#076543',
     y_format='%'
 )
@@ -712,15 +715,15 @@ plot_single_trendline(
 # %%
 plot_single_trendline(
     ni[(ni['Date'] > '2020-12-24') & (ni['Area']=='Armagh City, Banbridge and Craigavon')],
-    y='model_daily_change',
+    y='Rolling cases per 100k model_daily_change',
     color='#076543',
     y_format='%'
 )
 
 # %%
 plot_multiple_trendlines(
-    ni[(ni['Date']>'2020-11-24') & (~ni['model_daily_change'].isna())],
-    y='model_daily_change',
+    ni[(ni['Date']>'2020-11-24') & (~ni['Rolling cases per 100k model_daily_change'].isna())],
+    y='Rolling cases per 100k model_daily_change',
     color='Area',
     y_format='%',
     y_title='Daily change in 7-day rolling average of cases',
@@ -731,8 +734,8 @@ plot_multiple_trendlines(
 
 # %%
 plot_multiple_trendlines(
-    ni[(ni['Date']>'2021-04-23') & (~ni['model_daily_change'].isna())],
-    y='model_daily_change',
+    ni[(ni['Date']>'2021-10-31') & (~ni['Rolling cases per 100k model_daily_change'].isna())],
+    y='Rolling cases per 100k model_daily_change',
     color='Area',
     y_format='%',
     y_title='Daily change in 7-day rolling average of cases',
