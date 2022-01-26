@@ -1,16 +1,20 @@
 # %%
 import pandas
 import altair
+import numpy
 from plot_shared import plot_points_average_and_trend
 from data_shared import get_ni_pop_pyramid
 import datetime
 
 # %%
-def load_grouped_time_series(df, date_col, group_col, series_col, new_name, model=True):
+def load_grouped_time_series(df, date_col, group_col, series_col, new_name, model=True, interpolate=False):
     df = df.pivot(index=date_col,columns=group_col,values=series_col)
     newind = pandas.date_range(start=df.index.min(), end=df.index.max())
     df = df.reindex(newind)
-    df = df.fillna(0)
+    if interpolate:
+        df = df.interpolate()
+    else:
+        df = df.fillna(0)
     df = df.reset_index().melt(id_vars='index', var_name=group_col, value_name=series_col)
     df = df.rename(columns={'index': 'Date'}).sort_values('Date')
     df['%s 7-day rolling mean' %new_name] = df.groupby(group_col).rolling(7).mean().droplevel(0)
@@ -18,7 +22,6 @@ def load_grouped_time_series(df, date_col, group_col, series_col, new_name, mode
         df = create_models(df, group_col, '%s 7-day rolling mean' %new_name)
     return df
 
-# %%
 adm_band_mapping = pandas.DataFrame({'Age Band': ['Aged 0 - 19', 'Aged 40 - 49', 'Aged 50 - 59', 'Aged 60 - 69',
     'Aged 70 - 79', 'Aged 80 & Over', 'Unknown', 'Aged 20 - 39'], 'Group': ['0 - 19', '20+', '20+', '20+', '20+', '20+', 'Unknown', '20+']})
 case_band_mapping = pandas.DataFrame({
@@ -49,11 +52,18 @@ case_band_mapping = pandas.DataFrame({
             '40 - 49', '5 - 9', '50 - 59', '50 - 59',
             '60 - 69', '60 - 69', '70+', '70+',
             '70+', 'Not Known'
+        ],
+        'Admissions Group': [
+            'Aged 0 - 19', 'Aged 0 - 19', 'Aged 0 - 19', 'Aged 20 - 39',
+            'Aged 20 - 39', 'Aged 20 - 39', 'Aged 20 - 39', 'Aged 40 - 49',
+            'Aged 40 - 49', 'Aged 0 - 19', 'Aged 50 - 59', 'Aged 50 - 59',
+            'Aged 60 - 69', 'Aged 60 - 69', 'Aged 70 - 79', 'Aged 70 - 79',
+            'Aged 80 & Over', 'Unknown'
         ]
     })
 
 # %%
-admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-071221.xlsx', sheet_name='Admissions')
+admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-260122.xlsx', sheet_name='Admissions')
 admissions = admissions.groupby(['Admission Date', 'Age Band'])['Number of Admissions'].sum().reset_index()
 admissions['Admission Date'] = pandas.to_datetime(admissions['Admission Date'])
 admissions = load_grouped_time_series(admissions, 'Admission Date', 'Age Band', 'Number of Admissions', 'Admissions', False)
@@ -76,7 +86,13 @@ altair.Chart(admissions[(admissions['Group'] == '0 - 19')]).mark_line().encode(
 )
 
 # %%
-altair.Chart(admissions[admissions['Date'] > (admissions['Date'].max() + pandas.DateOffset(-42))]).mark_line().encode(
+admissions_grp = admissions.groupby(['Date','Age Band'])['Admissions 7-day rolling mean'].sum()
+admissions_pc = admissions_grp/admissions_grp.groupby(level=0).sum()
+admissions_pc = pandas.DataFrame(admissions_pc).reset_index()
+altair.vconcat(
+altair.Chart(
+    admissions[admissions['Date'] > (admissions['Date'].max() + pandas.DateOffset(-42))]
+).mark_line().encode(
     x = 'Date:T',
     y = altair.Y(
         field='Admissions 7-day rolling mean',
@@ -86,9 +102,26 @@ altair.Chart(admissions[admissions['Date'] > (admissions['Date'].max() + pandas.
     ),
     color = 'Age Band:N'
 ).properties(
-    height=450,
+    height=225,
+    width=800
+),
+altair.Chart(
+    admissions_pc[admissions_pc['Date'] > (admissions['Date'].max() + pandas.DateOffset(-42))]
+).mark_area().encode(
+    x = 'Date:T',
+    y = altair.Y(
+        field='Admissions 7-day rolling mean',
+        type='quantitative',
+        aggregate='sum',
+        axis=altair.Axis(title='% admissions per day'),
+    ),
+    color = 'Age Band:N'
+).properties(
+    height=225,
     width=800
 )
+)
+
 
 # %%
 cases = pandas.read_csv('agebands.csv')
@@ -186,7 +219,11 @@ plt.save('ni-age-band-cases-%s.png'%(datetime.datetime.now().date().strftime('%Y
 plt
 
 # %%
-def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, latest_y, title, subtitle):
+def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, latest_y, title, subtitle, y_scale='linear'):
+    if y_scale == 'log':
+        y_title += ' (log scale)'
+        title += ' (log scale)'
+
     trend = altair.Chart(df).mark_line().encode(
         x = x,
         y = altair.Y(
@@ -194,6 +231,7 @@ def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, lates
             type='quantitative',
             aggregate='sum',
             axis=altair.Axis(title=y_title, format=y_format),
+            scale=altair.Scale(type=y_scale),
         ),
         color = altair.Color(
             color,
@@ -211,6 +249,7 @@ def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, lates
             field=latest_y,
             type='quantitative',
             aggregate='sum',
+            scale=altair.Scale(type=y_scale),
         ),
         color = altair.Color(
             color,
@@ -257,7 +296,7 @@ plt = plot_timelines_with_latest(
     'Date:T',
     'Positive per 100k',
     'Broad Group:N',
-    'Positive per 100k (7 day total)',
+    'Positive per 100k, 7 day total',
     ',.2r',
     overlay,
     'Nearest',
@@ -276,7 +315,7 @@ plt = plot_timelines_with_latest(
     'Date:T',
     'Positivity_Rate',
     'Broad Group:N',
-    'Positivity Rate (7-date average)',
+    'Positivity Rate, 7-day average',
     '%',
     overlay,
     'Nearest_PR',
@@ -295,7 +334,7 @@ plt = plot_timelines_with_latest(
     'Date:T',
     'Tests per 100k',
     'Broad Group:N',
-    'Total Tests (7-day total)',
+    'Total Tests, 7-day total',
     ',.2r',
     overlay,
     'Nearest_Tests',
@@ -321,27 +360,203 @@ cases_10yr['Date'] = pandas.to_datetime(cases_10yr['Date'])
 cases_10yr['Cumulative Positive per 100k'] = cases_10yr.groupby('10 Year Group')['Positive per 100k'].cumsum() / 7.0
 overlay_10yr = cases_10yr[cases_10yr['Date'] == cases_10yr['Date'].max()]
 overlay_10yr['Nearest'] = overlay_10yr['Positive per 100k']
-#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '0 - 4', 'Nearest'] = 310
-#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '20 - 29', 'Nearest'] = 480
-#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '40 - 49', 'Nearest'] = 810
+overlay_10yr = overlay_10yr[overlay_10yr['Nearest'] < 100000]
+#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '30 - 39', 'Nearest'] = 2650
+#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '15 - 19', 'Nearest'] = 2500
+#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '5 - 9', 'Nearest'] = 890
 
-plt = plot_timelines_with_latest(
-    cases_10yr[cases_10yr['Date'] > (cases_10yr['Date'].max() + pandas.DateOffset(days=-42))],
-    'Date:T',
-    'Positive per 100k',
-    '10 Year Group:N',
-    'Positive per 100k (7 day total)',
-    ',.2r',
-    overlay_10yr,
-    'Nearest',
-    'NI COVID-19 positive cases per 100k people by age group (last six weeks)',
-    [
-        'From DoH daily data',
-        'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
-    ]
-)
-plt.save('ni-10yr-age-band-cases-%s.png'%(datetime.datetime.now().date().strftime('%Y-%m-%d')))
+for scale in ['linear','log']:
+    plt = plot_timelines_with_latest(
+        cases_10yr[
+            (cases_10yr['Positive per 100k'] > 0) &
+            (cases_10yr['Positive per 100k'] < 100000) &
+            (~cases_10yr['Positive per 100k'].isna()) &
+            (cases_10yr['Date'] > (cases_10yr['Date'].max() + pandas.DateOffset(days=-42)))
+        ],
+        'Date:T',
+        'Positive per 100k',
+        '10 Year Group:N',
+        'Positive per 100k, 7 day total',
+        ',.2r',
+        overlay_10yr,
+        'Nearest',
+        'NI COVID-19 positive cases per 100k people by age group, last six weeks',
+        [
+            'From DoH daily data',
+            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+        ],
+        y_scale=scale
+    )
+    plt.save('ni-10yr-age-band-%s-cases-%s.png'%(scale, datetime.datetime.now().date().strftime('%Y-%m-%d')))
 plt
+
+# %%
+overlay_10yr_sept = cases_10yr[cases_10yr['Date'] == '2021-09-30']
+overlay_10yr_sept['Nearest'] = overlay_10yr_sept['Positive per 100k']
+overlay_10yr_sept = overlay_10yr_sept[overlay_10yr_sept['Nearest'] < 100000]
+for scale in ['linear','log']:
+    plt = plot_timelines_with_latest(
+        cases_10yr[
+            (cases_10yr['Positive per 100k'] > 0) &
+            (cases_10yr['Positive per 100k'] < 100000) &
+            (~cases_10yr['Positive per 100k'].isna()) &
+            (cases_10yr['Date'] > '2021-08-20') &
+            (cases_10yr['Date'] < '2021-10-01')
+        ],
+        'Date:T',
+        'Positive per 100k',
+        '10 Year Group:N',
+        'Positive per 100k, 7 day total',
+        ',.2r',
+        overlay_10yr_sept,
+        'Nearest',
+        'NI COVID-19 positive cases per 100k people by age group, six weeks to end of Sept 2021',
+        [
+            'From DoH daily data',
+            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+        ],
+        y_scale=scale
+    )
+    plt.save('ni-10yr-sept-age-band-%s-cases-%s.png'%(scale, datetime.datetime.now().date().strftime('%Y-%m-%d')))
+plt
+
+# %%
+overlay_adm = admissions[admissions['Date'] == admissions['Date'].max()]
+overlay_adm['Nearest'] = overlay_adm['Admissions 7-day rolling mean']
+for scale in ['linear','log']:
+    plt = plot_timelines_with_latest(
+        admissions[admissions['Date'] > (admissions['Date'].max() + pandas.DateOffset(-42))],
+        'Date:T',
+        'Admissions 7-day rolling mean',
+        'Age Band:N',
+        'Admissions per day, 7-day average',
+        ',.2r',
+        overlay_adm,
+        'Nearest',
+        'NI COVID-19 hospital admissions people by age group, last six weeks',
+        [
+            'From DoH daily data, last 5 days will likely be corrected upwards',
+            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+        ],
+        y_scale=scale
+    )
+    plt.save('ni-10yr-adm-age-band-%s-cases-%s.png'%(scale, datetime.datetime.now().date().strftime('%Y-%m-%d')))
+plt
+
+
+# %%
+overlay_10yr['One in N'] = 100000 / overlay_10yr['Positive per 100k']
+overlay_10yr
+
+# %%
+cases['Date'] = pandas.to_datetime(cases['Date'])
+overlay_cases = cases[cases['Date'] == cases['Date'].max()]
+overlay_cases['Nearest'] = overlay_cases['Positive per 100k']
+#overlay_cases.loc[overlay_cases['Age_Band_5yr'] == 'Aged 75 - 79', 'Nearest'] = 110
+#overlay_cases.loc[overlay_cases['Age_Band_5yr'] == 'Aged 70 - 74', 'Nearest'] = 100
+#overlay_cases.loc[overlay_cases['Age_Band_5yr'] == 'Aged 80 & Over', 'Nearest'] = 115
+for scale in ['linear','log']:
+    plt = plot_timelines_with_latest(
+        cases[(cases['Date'] > (cases['Date'].max() + pandas.DateOffset(days=-42))) & (cases['Age_Band_5yr'].isin(['Aged 60 - 64', 'Aged 65 - 69', 'Aged 70 - 74', 'Aged 75 - 79', 'Aged 80 & Over']))],
+        'Date:T',
+        'Positive per 100k',
+        'Age_Band_5yr:N',
+        'Positive per 100k, 7 day total',
+        ',.2r',
+        overlay_cases[(overlay_cases['Age_Band_5yr'].isin(['Aged 60 - 64', 'Aged 65 - 69', 'Aged 70 - 74', 'Aged 75 - 79', 'Aged 80 & Over']))],
+        'Nearest',
+        'NI COVID-19 positive cases per 100k people by older age group, last six weeks',
+        [
+            'From DoH daily data',
+            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y'),
+        ],
+        y_scale=scale
+    )
+    plt.save('ni-5yr-%s-age-band-cases-older-%s.png'%(scale,datetime.datetime.now().date().strftime('%Y-%m-%d')))
+plt
+
+# %%
+mydf = pandas.DataFrame({
+    'Date': ['2021-01-04','2021-01-04','2021-01-05','2021-01-05'],
+    'Group': ['A','B','A','B'],
+    'Col1': [0,1,2,3],
+    'Col2': [4,1,5,3],
+})
+mydf.groupby('Group').corrwith(mydf.groupby('Group')['Col1'].shift(1))
+
+
+# %%
+cases_adm = cases.groupby(['Date','Admissions Group']).sum().reset_index()
+cases_adm['Positivity_Rate'] = cases_adm['Positive_Tests'] / cases_adm['Total_Tests']
+cases_adm['Date'] = pandas.to_datetime(cases_adm['Date'])
+cases_adm = load_grouped_time_series(cases_adm, 'Date', 'Admissions Group', 'Positive_Tests', 'Positive_Tests', False, True)
+cases_adm = admissions[admissions['Date'] >= cases_adm['Date'].min()].merge(cases_adm, how='left', right_on=['Date','Admissions Group'], left_on=['Date','Age Band'])
+base = cases_adm.groupby('Admissions Group')[['Admissions 7-day rolling','Positive_Tests']]
+corrs = pandas.DataFrame()
+for offset in range(21):
+    a = base.corrwith(cases_adm.groupby('Admissions Group')['Positive_Tests'].shift(offset)).reset_index()
+    out = a[['Admissions Group','Admissions 7-day rolling']].rename(columns={'Admissions 7-day rolling': 'corr'})
+    out['Offset'] = offset
+    corrs = pandas.concat([corrs, out])
+offsets = corrs.sort_values('corr').drop_duplicates('Admissions Group',keep='last').sort_values('Admissions Group')
+
+altair.Chart(
+    corrs
+).mark_line().encode(
+    x = 'Offset:Q',
+    y = altair.Y('corr:Q'),
+    color='Admissions Group'
+)
+
+# %% Exponential fitting functions
+def variable_shift(x, df):
+    part = df[df['Admissions Group']==x['Admissions Group']]
+    part['Admissions 7-day rolling'] = part['Admissions 7-day rolling'].shift(-x['Offset'])
+    return part
+
+def get_model_for_area(df, to_model, x):
+    df = df[(~df[x].isna()) & (~df[to_model].isna())]
+    return numpy.polyfit(df[x], df[to_model], 1)
+
+def fit_lin(model0, model1, value):
+    return ((model0 * value)  + model1)
+
+def create_models(df, areakey, x, to_model):
+    a = offsets.apply(variable_shift, axis=1, df=df)
+    df = pandas.concat(a.to_list())
+    model = df.groupby(areakey).apply(get_model_for_area, x=x, to_model=to_model)
+    model = pandas.DataFrame(model.to_list(), index=model.index).reset_index()
+    model.rename(columns={0: '%s model0'%to_model, 1: '%s model1'%to_model}, inplace=True)
+    df = df.merge(
+        model,
+        left_on=[areakey],
+        right_on=[areakey],
+        validate='m:1'
+    )
+    df['%s modelled' %to_model] = fit_lin(df['%s model0'%to_model], df['%s model1'%to_model], df[x])
+    return(df, model)
+
+cases_adm_modelled, adm_model = create_models(cases_adm, 'Admissions Group', 'Positive_Tests', 'Admissions 7-day rolling')
+cases_adm_modelled['Status'] = cases_adm_modelled['Admissions 7-day rolling'].isna()
+cases_adm_modelled['Admissions 7-day rolling'] = cases_adm_modelled['Admissions 7-day rolling'].fillna(cases_adm_modelled['Admissions 7-day rolling modelled'])
+
+# %%
+altair.Chart(
+    cases_adm_modelled
+).mark_point().encode(
+    x = 'Positive_Tests:Q',
+    y = altair.Y('Admissions 7-day rolling:Q'),
+    facet='Admissions Group',
+    color='Status'
+).resolve_scale(
+    x='independent',
+    y='independent',
+)
+
+# %%
+modelled = cases_adm_modelled[cases_adm_modelled['Status']]
+modelled['day'] = modelled.groupby("Admissions Group")["Date"].rank(method="first", ascending=True)
+modelled.groupby('day')['Admissions 7-day rolling'].sum() / 7
 
 # %%
 cases_total = cases.groupby(['Date','Age_Band_5yr'])['Positive_Tests'].sum()
