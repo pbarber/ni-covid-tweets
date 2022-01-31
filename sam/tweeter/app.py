@@ -79,12 +79,12 @@ def plot_test_stats(df, start_date, scale='linear'):
     return plot_points_average_and_trend(
         [
             {
-                'points': df[(df['Sample_Date'] > start_date)].set_index(['Sample_Date'])['INDIVIDUALS TESTED POSITIVE'],
+                'points': df[(df['Sample_Date'] > start_date)].set_index(['Sample_Date'])['Total Cases'],
                 'line': df[(df['Sample_Date'] > start_date)].set_index(['Sample_Date'])['New cases 7-day rolling mean'],
                 'colour': '#076543',
                 'date_col': 'Sample_Date',
                 'x_title': 'Specimen Date',
-                'y_title': 'New cases',
+                'y_title': 'Total cases',
                 'scales': [scale],
                 'height': 225
             },
@@ -100,8 +100,8 @@ def plot_test_stats(df, start_date, scale='linear'):
                 'height': 225
             },
             {
-                'points': df[(df['Sample_Date'] > start_date)].set_index('Sample_Date')['ALL INDIVIDUALS TESTED'],
-                'line': df[(df['Sample_Date'] > start_date)].set_index('Sample_Date')['ROLLING 7 DAY INDIVIDUALS TESTED'],
+                'points': df[(df['Sample_Date'] > start_date)].set_index('Sample_Date')['Total Tests'],
+                'line': df[(df['Sample_Date'] > start_date)].set_index('Sample_Date')['Rolling 7 Day Tests (PCR & LFT)'],
                 'colour': '#076543',
                 'date_col': 'Sample_Date',
                 'x_title': 'Specimen Date',
@@ -188,7 +188,7 @@ def lambda_handler(event, context):
 
         # Load the tests sheet and add it to the store
         daily = pandas.read_excel(stream,engine='openpyxl',sheet_name='Tests')
-        daily = daily.groupby(['Date of Specimen']).sum()[['Total Lab Tests','Individ with Lab Test','Individ with Positive Lab Test']].reset_index()
+        daily = daily.groupby(['Sample_Date']).sum()[['Total Tests','Total Cases']].reset_index()
         daily['Reported_Date'] = pandas.to_datetime(change['filedate'], format='%Y-%m-%d')
         datastore = update_datastore(
             s3,
@@ -202,11 +202,11 @@ def lambda_handler(event, context):
 
         # Load test data and add extra fields
         df = pandas.read_excel(stream,engine='openpyxl',sheet_name='Summary Tests')
-        df['pos_rate'] = df['INDIVIDUALS TESTED POSITIVE']/df['ALL INDIVIDUALS TESTED']
-        df['rolling_pos_rate'] = df['ROLLING 7 DAY POSITIVE TESTS']/df['ROLLING 7 DAY INDIVIDUALS TESTED']
+        df['pos_rate'] = df['Total Cases']/df['Total Tests']
+        df['rolling_pos_rate'] = df['Rolling 7 Day Cases']/df['Rolling 7 Day Tests (PCR & LFT)']
         df['printdate']=df['Sample_Date'].dt.strftime('%-d %B %Y')
-        df['rolling_7d_change'] = (df['ROLLING 7 DAY POSITIVE TESTS'] - df['ROLLING 7 DAY POSITIVE TESTS'].shift(7)) * 7
-        df['New cases 7-day rolling mean'] = df['INDIVIDUALS TESTED POSITIVE'].rolling(7, center=True).mean()
+        df['rolling_7d_change'] = (df['Rolling 7 Day Cases'] - df['Rolling 7 Day Cases'].shift(7)) * 7
+        df['New cases 7-day rolling mean'] = df['Total Cases'].rolling(7, center=True).mean()
         df.set_index('Sample_Date', inplace=True)
         newind = pandas.date_range(start=df.index.min(), end=df.index.max())
         df = df.reindex(newind)
@@ -217,7 +217,7 @@ def lambda_handler(event, context):
 
         # Get the latest dates with values for tests and rolling
         latest = df.iloc[df['Sample_Date'].idxmax()]
-        latest_7d = df.iloc[df[df['ROLLING 7 DAY POSITIVE TESTS'].notna()]['Sample_Date'].idxmax()]
+        latest_7d = df.iloc[df[df['Rolling 7 Day Cases'].notna()]['Sample_Date'].idxmax()]
         latest_model = df.iloc[df[df['Rolling cases per 100k model_daily_change'].notna()]['Sample_Date'].idxmax()]
         last_but1_model = df.iloc[df[(df['Rolling cases per 100k model_daily_change'].notna()) & (df['Sample_Date'] != latest_model['Sample_Date'])]['Sample_Date'].idxmax()]
 
@@ -229,8 +229,8 @@ def lambda_handler(event, context):
         inpatients.rename(columns={'Inpatients at Midnight': 'Date'}, inplace=True)
         icu = load_ni_time_series(stream,'ICU','Date','Confirmed COVID Occupied')
         totals = {
-            'ind_tested': int(df['ALL INDIVIDUALS TESTED'].sum()),
-            'ind_positive': int(df['INDIVIDUALS TESTED POSITIVE'].sum()),
+            'ind_tested': int(df['Total Tests'].sum()),
+            'ind_positive': int(df['Total Cases'].sum()),
             'deaths': int(deaths['Number of Deaths'].sum()),
             'admissions': int(admissions['Number of Admissions'].sum()),
             'discharges': int(discharges['Number of Discharges'].sum())
@@ -246,12 +246,12 @@ def lambda_handler(event, context):
 
         # Age band data
         age_bands = pandas.read_excel(stream,engine='openpyxl',sheet_name='Individuals 7 Days - 5yr Age')
-        age_bands['Total_Tests'] = age_bands['Positive_Tests'] + age_bands['Negative_Tests'] + age_bands['Indeterminate_Tests']
-        age_bands = age_bands.groupby('Age_Band_5yr').sum()[['Positive_Tests','Total_Tests']].reset_index()
-        age_bands['Positivity_Rate'] = age_bands['Positive_Tests'] / age_bands['Total_Tests']
+        age_bands = age_bands.groupby('Age_Band_5yr').sum()[['Total_Cases','Total_Tests']].reset_index()
+        age_bands['Positivity_Rate'] = age_bands['Total_Cases'] / age_bands['Total_Tests']
         age_bands['Band Start'] = age_bands['Age_Band_5yr'].str.extract('Aged (\d+)').astype(float)
         age_bands['Band End'] = age_bands['Age_Band_5yr'].str.extract('Aged \d+ - (\d+)').astype(float)
         age_bands['Date'] = df['Sample_Date'].max()
+        age_bands['Positive_Tests'] = age_bands['Total_Cases']
         # Get the age bands datastore contents from S3
         datastore = update_datastore(
             s3,
@@ -332,7 +332,7 @@ def lambda_handler(event, context):
                         plots = output_plot(p, plots, driver, 'ni-tests-%s.png' % today_str)
 
         # Find the date since which the rate was as high/low
-        symb_7d, est = find_previous(df, latest_7d, 'ROLLING 7 DAY POSITIVE TESTS')
+        symb_7d, est = find_previous(df, latest_7d, 'Rolling 7 Day Cases')
 
         # Build the tweet text
         tweet = '''{ind_tested:,} people tested, {ind_positive:,} ({pos_rate:.2%}) positive on {date}
@@ -343,14 +343,14 @@ def lambda_handler(event, context):
 
 '''.format(
             date=latest['Sample_Date'].strftime('%A %-d %B %Y'),
-            ind_positive=int(latest['INDIVIDUALS TESTED POSITIVE']),
-            ind_tested=int(latest['ALL INDIVIDUALS TESTED']),
+            ind_positive=int(latest['Total Cases']),
+            ind_tested=int(latest['Total Tests']),
             pos_rate=latest['pos_rate'],
             symb_7d=symb_7d,
             est=est,
             model_daily=abs(last_but1_model['Rolling cases per 100k model_daily_change']),
             model_weekly=abs(last_but1_model['Rolling cases per 100k model_weekly_change']),
-            pos_7d=int(round(latest_7d['ROLLING 7 DAY POSITIVE TESTS']*7,0)),
+            pos_7d=int(round(latest_7d['Rolling 7 Day Cases']*7,0)),
             dir_model='falling' if last_but1_model['Rolling cases per 100k model_daily_change']<0 else 'rising',
             tag_model=good_symb if last_but1_model['Rolling cases per 100k model_daily_change']<0 else bad_symb,
             doub='halving' if (last_but1_model['Rolling cases per 100k model0'] < 0) else 'doubling',
@@ -459,7 +459,7 @@ def lambda_handler(event, context):
                         resp = api.dm(secret['twitter_dmaccount'], t['text'] + t['url'])
                     messages.append('Tweeted DM %s, ' %resp.id)
                     if len(upload_ids) > 1:
-                        resp = api.dm(secret['twitter_dmaccount'], t['text2'], upload_ids[-1])
+                        resp = api.dm(secret['twitter_dmaccount'], t['text2'], upload_ids[-2])
                     else:
                         resp = api.dm(secret['twitter_dmaccount'], t['text2'])
             else:

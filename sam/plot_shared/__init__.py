@@ -167,12 +167,12 @@ def plot_key_ni_stats_date_range(df, admissions, deaths, start_date, end_date, s
     return plot_points_average_and_trend(
         [
             {
-                'points': df[(df['Sample_Date'] >= start_date) & (df['Sample_Date'] <= end_date)].set_index('Sample_Date')['INDIVIDUALS TESTED POSITIVE'],
+                'points': df[(df['Sample_Date'] >= start_date) & (df['Sample_Date'] <= end_date)].set_index('Sample_Date')['Total Cases'],
                 'line': df[(df['Sample_Date'] >= start_date) & (df['Sample_Date'] <= end_date)].set_index('Sample_Date')['New cases 7-day rolling mean'],
                 'colour': '#076543',
                 'date_col': 'Sample_Date',
                 'x_title': 'Specimen Date',
-                'y_title': 'New cases',
+                'y_title': 'Total cases',
                 'scales': scales,
                 'width': 800 / len(scales),
                 'height': 225,
