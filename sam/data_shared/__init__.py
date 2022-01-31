@@ -56,7 +56,7 @@ def update_datastore(s3, bucketname, keyname, last_updated, df, store, datecol='
     # Pull current data from s3, or empty dataframe
     datastore = get_s3_csv_or_empty_df(s3, bucketname, keyname, [datecol])
     # Clean out any data with matching dates
-    datastore = datastore[datastore[datecol] != last_updated]
+    datastore = datastore[pandas.to_datetime(datastore[datecol]).dt.date != last_updated.date()]
     # Append the new data
     datastore = pandas.concat([datastore, df])
     datastore[datecol] = datastore[datecol].fillna(last_updated)
