@@ -501,7 +501,7 @@ def make_postcode_plots(driver, datastore, plots, today, last_updated):
     ).properties(
         height=1000,
         width=450,
-        title='NI COVID-19 Vaccinations per Person by Postcode District up to %s' %datetime.datetime.strptime(last_updated,'%Y-%m-%d').strftime('%-d %B %Y')
+        title='NI COVID-19 Vaccinations per Person by Postcode District up to %s' %last_updated.strftime('%-d %B %Y')
     )
     p = altair.vconcat(
         altair.layer(
@@ -611,7 +611,7 @@ def make_headline_tweets(df, source, last_updated):
         pct_s=int(second_reg/total_reg * 100),
         pct_t=int(third_reg/total_reg * 100),
         pct_b=int(booster_reg/total_reg * 100),
-        date=datetime.datetime.strptime(last_updated,'%Y-%m-%d').strftime('%A %-d %B %Y'),
+        date=last_updated.strftime('%A %-d %B %Y'),
         source= 'https://coronavirus.data.gov.uk/' if source=='PHE' else 'https://covid-19.hscni.net/'
     ))
 
@@ -672,6 +672,7 @@ def lambda_handler(event, context):
         today = datetime.datetime.now().date()
         driver = get_chrome_driver()
         ni_age_bands_reported = None
+        last_updated = datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d')
         if driver is None:
             logging.error('Failed to start chrome')
         else:
@@ -685,13 +686,13 @@ def lambda_handler(event, context):
                 driver.get(url)
                 store_data = (event.get('notweet') is not True) and (event.get('testtweet') is not True)
                 s3dir = keyname.rsplit('/',maxsplit=1)[0]
-                headlines = get_ni_headline_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
-                tweets = make_headline_tweets(headlines, event['Source'], event['Last Updated'])
-                ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
+                headlines = get_ni_headline_data(driver, s3, secret['bucketname'], last_updated, s3dir, store_data)
+                tweets = make_headline_tweets(headlines, event['Source'], last_updated)
+                ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], last_updated, s3dir, store_data)
                 if today.weekday() == 5: # Saturday - Vaccinations per person by postcode district
                     driver.get(url)
-                    postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], event['Last Updated'], s3dir, store_data)
-                    plots = make_postcode_plots(driver, postcodes, plots, today, event['Last Updated'])
+                    postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], last_updated, s3dir, store_data)
+                    plots = make_postcode_plots(driver, postcodes, plots, today, last_updated)
                 elif today.weekday() == 0: # Monday - NI/Eng age band comparison
                     plots = make_age_band_plots(driver, ni_age_bands, plots, today)
             except:
