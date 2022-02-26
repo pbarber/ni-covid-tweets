@@ -189,104 +189,6 @@ def check_doh(secret, s3, notweet, mode):
 
     return message
 
-def check_hscni(original):
-    session = requests.Session()
-
-    # Get the COVID-19 site homepage
-    url = 'https://covid-19.hscni.net/'
-    html = BeautifulSoup(get_url(session, url,'text'),features="html.parser")
-
-    # Extract the vaccine data
-    div = html.find("div", {"class": "bg-vaccine-soft"})
-    heads = []
-    for head in div.find_all("h4"):
-        heads.append(head.text)
-    items = []
-    for item in div.find_all("div", {"class": "text-5xl"}):
-        items.append(item.text)
-    data = {}
-    if len(heads) == len(items) and len(items) > 0:
-        for i in range(len(heads)):
-            data[heads[i]] = int(items[i].replace(',',''))
-    rawdate = div.find("div", {"class": "mt-8"}).text.partition(':')[2].strip()
-
-    # Format silly date string properly, if not this year assume last year
-    noyeardate = datetime.datetime.strptime(rawdate, '%d %B, %I:%M %p').date() # 25 March, 12:07 pm
-    today = datetime.datetime.today()
-    if noyeardate.month > today.month:
-        reportdate = noyeardate.replace(year=today.year-1) - datetime.timedelta(days=1)
-    else:
-        reportdate = noyeardate.replace(year=today.year) - datetime.timedelta(days=1)
-
-    if 'Vaccinations Total' in data:
-        data['Total Doses'] = data['Vaccinations Total']
-    if 'Vaccinations Total (Dose 1)' in data:
-        data['Total First Doses'] = data['Vaccinations Total (Dose 1)']
-    if 'Vaccinations Total (Dose 2)' in data:
-        data['Total Second Doses'] = data['Vaccinations Total (Dose 2)']
-
-    # Account for one day delay in reporting
-    data['Last Updated'] = reportdate.isoformat()
-    data['First Doses pc'] = round((100 * data['Total First Doses']) / 1597898, 1) # NI 16 and over
-    data['Second Doses pc'] = round((100 * data['Total Second Doses']) / 1597898, 1)
-    data['Source'] = 'HSCNI'
-
-    # Do change detection
-    previous = deepcopy(original)
-    change = False
-    if len(previous) > 0:
-        if (data['Last Updated'] != previous[0]['Last Updated']):
-            data['First Doses Registered'] = data['Total First Doses'] - previous[0]['Total First Doses']
-            data['Second Doses Registered'] = data['Total Second Doses'] - previous[0]['Total Second Doses']
-            previous.insert(0, data)
-            change = True
-        elif (data['Total Doses'] != previous[0]['Total Doses']):
-            data['First Doses Registered'] = data['Total First Doses'] - previous[1]['Total First Doses']
-            data['Second Doses Registered'] = data['Total Second Doses'] - previous[1]['Total Second Doses']
-            previous[0] = data
-            change = True
-    else:
-        data['First Doses Registered'] = data['Total First Doses']
-        data['Second Doses Registered'] = data['Total Second Doses']
-        previous.insert(0, data)
-        change = True
-
-    return previous, change
-
-def check_phe(original):
-    session = requests.Session()
-
-    # Get the PHE data from the API
-    url = 'https://api.coronavirus.data.gov.uk/v2/data?areaType=nation&areaCode=N92000002&metric=cumPeopleVaccinatedFirstDoseByPublishDate&metric=cumPeopleVaccinatedSecondDoseByPublishDate&format=json'
-    ordered = sorted(get_url(session, url,'json').get('body',[]), key=lambda k: k['date'], reverse=True)
-
-    previous = deepcopy(original)
-    change = False
-    if (len(ordered) > 1):
-        data = {
-            'Last Updated': ordered[0]['date'],
-            'Total Doses': ordered[0]['cumPeopleVaccinatedFirstDoseByPublishDate'] + ordered[0]['cumPeopleVaccinatedSecondDoseByPublishDate'],
-            'Total First Doses': ordered[0]['cumPeopleVaccinatedFirstDoseByPublishDate'],
-            'Total Second Doses': ordered[0]['cumPeopleVaccinatedSecondDoseByPublishDate'],
-            'First Doses Registered': ordered[0]['cumPeopleVaccinatedFirstDoseByPublishDate'] - ordered[1]['cumPeopleVaccinatedFirstDoseByPublishDate'],
-            'Second Doses Registered': ordered[0]['cumPeopleVaccinatedSecondDoseByPublishDate'] - ordered[1]['cumPeopleVaccinatedSecondDoseByPublishDate'],
-            'Source': 'PHE'
-        }
-        data['First Doses pc'] = round((100 * data['Total First Doses']) / 1597898, 1)  # NI 16 and over
-        data['Second Doses pc'] = round((100 * data['Total Second Doses']) / 1597898, 1)
-        if len(previous) > 0:
-            if (data['Last Updated'] > previous[0]['Last Updated']):
-                previous.insert(0, data)
-                change = True
-            elif (data['Last Updated'] == previous[0]['Last Updated']) and (data['Total Doses'] > previous[0]['Total Doses']):
-                previous[0] = data
-                change = True
-        else:
-            previous.insert(0, data)
-            change = True
-
-    return previous, change
-
 def check_symptoms():
     url = 'https://services-eu1.arcgis.com/CbFuxzn9jT2gu2G1/arcgis/rest/services/Prod_Symptoms_By_Hex_Tess_All_Public_View/FeatureServer/0/query'
     formdata = {
@@ -300,54 +202,6 @@ def check_symptoms():
         "where": "(DateOfReport BETWEEN timestamp '2021-03-04 00:00:00' AND CURRENT_TIMESTAMP) AND ((DateOfReport BETWEEN timestamp '2021-03-04 00:00:00' AND timestamp '2021-03-28 00:59:59' OR DateOfReport BETWEEN timestamp '2021-03-28 01:00:00' AND timestamp '2021-04-01 00:00:00'))"
     }
     print('POST %s to %s' %(formdata,url))
-
-def check_vaccine(bucketname, indexkey, s3, notweet):
-    index, indexobj = get_and_sort_index(bucketname, indexkey, s3)
-
-    # Check both the PHE API and HSCNI site
-    phechange = False
-    hscchange = False
-    try:
-        phe, phechange = check_phe(index)
-    except:
-        logging.exception('Caught exception accessing PHE vaccine data')
-    try:
-        hsc, hscchange = check_hscni(index)
-    except:
-        logging.exception('Caught exception accessing HSCNI vaccine data')
-
-    # Choose which data to tweet
-    chosen = None
-    doses = ['First','Second']
-    if hscchange and phechange and (phe[0]['Last Updated'] == hsc[0]['Last Updated']):
-        print('vaccines: both changed')
-        if any([phe[0]['Total %s Doses' %dose] < hsc[0]['Total %s Doses' %dose] for dose in doses]):
-            chosen = hsc[0]
-        else:
-            chosen = phe[0]
-    elif hscchange and ((len(index) == 0) or (hsc[0]['Last Updated'] >= index[0]['Last Updated'])):
-        if any([index[0]['Total %s Doses' %dose] < hsc[0]['Total %s Doses' %dose] for dose in doses]):
-            chosen = hsc[0]
-    elif phechange and ((len(index) == 0) or (phe[0]['Last Updated'] >= index[0]['Last Updated'])):
-        if any([index[0]['Total %s Doses' %dose] < phe[0]['Total %s Doses' %dose] for dose in doses]):
-            chosen = phe[0]
-
-    # If there has been a change, then tweet
-    message = 'Did nothing'
-    if chosen is not None:
-        message = 'New last updated date of %s from %s' %(chosen['Last Updated'],chosen['Source'])
-        print(chosen)
-        if not notweet:
-            # Update the S3 indexes
-            if chosen['Source']=='HSCNI':
-                indexobj.put_dict(hsc)
-            else:
-                indexobj.put_dict(phe)
-            print('Launching vaccine tweeter')
-            launch_lambda_async(os.getenv('VACCINE_TWEETER_LAMBDA'),chosen)
-            message += ', and launched vaccine tweet lambda'
-
-    return(message)
 
 def check_for_nisra_files(s3client, bucket, previous):
     session = requests.Session()
@@ -592,10 +446,6 @@ def lambda_handler(event, context):
             messages.append(check_doh(secret, s3, event.get('r-notweet', False), 'r'))
         except:
             logging.exception('Caught exception accessing DOH R number')
-        try:
-            messages.append(check_vaccine(secret['bucketname'], secret['shared-vacc-index'], s3, event.get('vaccine-notweet', False)))
-        except:
-            logging.exception('Caught exception accessing vaccine data')
         try:
             messages.append(check_nisra(secret, s3, event.get('nisra-notweet', False)))
         except:
