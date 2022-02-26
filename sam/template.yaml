@@ -60,6 +60,11 @@ Resources:
       ImageConfig:
         Command:
           - "vaccines_tweeter.lambda_handler"
+      Events:
+        InvocationLevel:
+          Type: Schedule
+          Properties:
+            Schedule: cron(15 12 * * ? *)
     Metadata:
       DockerTag: tweeter-tag
       DockerContext: ./

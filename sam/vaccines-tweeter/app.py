@@ -17,7 +17,7 @@ import pandas
 import numpy
 import altair
 
-from shared import S3_scraper_index, get_url
+from shared import S3_scraper_index, get_url, get_and_sort_index
 from twitter_shared import TwitterAPI
 from plot_shared import get_chrome_driver
 from data_shared import get_eng_pop_pyramid, get_ni_pop_pyramid, update_datastore
@@ -578,6 +578,8 @@ def make_headline_tweets(df, source, last_updated):
     previous = df[df['Date']!=df['Date'].max()]
     previous = previous[previous['Date']==previous['Date'].max()]
     total_reg = int(latest['Total'].sum() - previous['Total'].sum())
+    if total_reg <= 0:
+        return None
     first_reg = int(latest[latest['Dose']=='Dose 1']['Total'].sum() - previous[previous['Dose']=='Dose 1']['Total'].sum())
     second_reg = int(latest[latest['Dose']=='Dose 2']['Total'].sum() - previous[previous['Dose']=='Dose 2']['Total'].sum())
     third_reg = int(latest[latest['Dose']=='Dose 3']['Total'].sum() - previous[previous['Dose']=='Dose 3']['Total'].sum())
@@ -612,7 +614,7 @@ def make_headline_tweets(df, source, last_updated):
         pct_t=int(third_reg/total_reg * 100),
         pct_b=int(booster_reg/total_reg * 100),
         date=last_updated.strftime('%A %-d %B %Y'),
-        source= 'https://coronavirus.data.gov.uk/' if source=='PHE' else 'https://covid-19.hscni.net/'
+        source= 'https://coronavirus.data.gov.uk/' if source=='PHE' else 'https://covid-19.hscni.net/ni-covid-19-vaccinations-dashboard/'
     ))
 
     blocks = ['','','','']
@@ -664,15 +666,15 @@ def lambda_handler(event, context):
         # Get the previous data file list from S3
         s3 = boto3.client('s3')
         keyname = secret['shared-vacc-index']
-        status = S3_scraper_index(s3, secret['bucketname'], keyname)
-        index = status.get_dict()
+        index, indexobj = get_and_sort_index(secret['bucketname'], keyname, s3)
 
         tweets = []
         plots = []
         today = datetime.datetime.now().date()
         driver = get_chrome_driver()
         ni_age_bands_reported = None
-        last_updated = datetime.datetime.strptime(event['Last Updated'],'%Y-%m-%d')
+        last_updated = datetime.datetime.now()
+        print(last_updated)
         if driver is None:
             logging.error('Failed to start chrome')
         else:
@@ -687,7 +689,10 @@ def lambda_handler(event, context):
                 store_data = (event.get('notweet') is not True) and (event.get('testtweet') is not True)
                 s3dir = keyname.rsplit('/',maxsplit=1)[0]
                 headlines = get_ni_headline_data(driver, s3, secret['bucketname'], last_updated, s3dir, store_data)
-                tweets = make_headline_tweets(headlines, event['Source'], last_updated)
+                latest = headlines[headlines['Date']==headlines['Date'].max()]
+                tweets = make_headline_tweets(headlines, 'HSCNI', last_updated)
+                if tweets is None:
+                    raise Exception('No change in data')
                 ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], last_updated, s3dir, store_data)
                 if today.weekday() == 5: # Saturday - Vaccinations per person by postcode district
                     driver.get(url)
@@ -785,11 +790,16 @@ def lambda_handler(event, context):
                             resp = api.tweet(tweets[0], media_ids=upload_ids)
                         else:
                             resp = api.tweet(tweets[0])
+                        index_updated = False
+                        datestr = datetime.datetime.strftime(last_updated, '%Y-%d-%m')
                         for i in range(len(index)):
-                            if index[i]['Last Updated'] == event['Last Updated']:
+                            if index[i]['Last Updated'] == datestr:
                                 index[i]['tweet'] = resp.id
+                                index_updated = True
                                 break
-                        status.put_dict(index)
+                        if index_updated is False:
+                            index.append({'tweet':resp.id, 'Last Updated': datestr, 'Total Doses': int(latest['Total'].sum())})
+                        indexobj.put_dict(index)
                         message = 'Tweeted ID %s and updated %s' %(resp.id, keyname)
                     elif j == 1:
                         resp = api.tweet(tweets[j], resp.id)
