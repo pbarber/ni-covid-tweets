@@ -1,5 +1,5 @@
 {
-    "Last Updated": "2022-01-23",
+    "Last Updated": "2022-02-02",
     "Total Doses": 2706180,
     "Total First Doses": 1405300,
     "Total Second Doses": 1300880,
@@ -8,6 +8,6 @@
     "Source": "PHE",
     "First Doses pc": 87.9,
     "Second Doses pc": 81.4,
-    "notweet": false,
+    "notweet": true,
     "testtweet": false
 }
