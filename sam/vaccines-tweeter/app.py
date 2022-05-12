@@ -17,7 +17,7 @@ import pandas
 import numpy
 import altair
 
-from shared import S3_scraper_index, get_url, get_and_sort_index
+from shared import get_url, get_and_sort_index
 from twitter_shared import TwitterAPI
 from plot_shared import get_chrome_driver
 from data_shared import get_eng_pop_pyramid, get_ni_pop_pyramid, update_datastore
@@ -25,36 +25,39 @@ from data_shared import get_eng_pop_pyramid, get_ni_pop_pyramid, update_datastor
 good_symb = '\u2193'
 bad_symb = '\u2191'
 
+arrow_block = '\u2795'
 green_block = '\u2705'
 white_block = '\u2b1c'
 black_block = '\u2b1b'
 
 # List of NI age bands, with ordering for plotting
 ni_age_bands_lookup = pandas.DataFrame([
-    {'Order': 0, 'NI band': 'Under 12', 'Ages': [i for i in range(12)]},
-    {'Order': 1, 'NI band': '12-15', 'Ages': [i for i in range(12,16)]},
-    {'Order': 2, 'NI band': '16-17', 'Ages': [i for i in range(16,18)]},
-    {'Order': 3, 'NI band': '18-29', 'Ages': [i for i in range(18,30)]},
-    {'Order': 4, 'NI band': '30-39', 'Ages': [i for i in range(30,40)]},
-    {'Order': 5, 'NI band': '40-49', 'Ages': [i for i in range(40,50)]},
-    {'Order': 6, 'NI band': '50-59', 'Ages': [i for i in range(50,60)]},
-    {'Order': 7, 'NI band': '60-69', 'Ages': [i for i in range(60,70)]},
-    {'Order': 8, 'NI band': '70-79', 'Ages': [i for i in range(70,80)]},
-    {'Order': 9, 'NI band': '80+', 'Ages': [i for i in range(80,91)]},
+    {'Order': 0, 'NI band': 'Under 5', 'Ages': [i for i in range(5)]},
+    {'Order': 1, 'NI band': '5-11', 'Ages': [i for i in range(5,12)]},
+    {'Order': 2, 'NI band': '12-15', 'Ages': [i for i in range(12,16)]},
+    {'Order': 3, 'NI band': '16-17', 'Ages': [i for i in range(16,18)]},
+    {'Order': 4, 'NI band': '18-29', 'Ages': [i for i in range(18,30)]},
+    {'Order': 5, 'NI band': '30-39', 'Ages': [i for i in range(30,40)]},
+    {'Order': 6, 'NI band': '40-49', 'Ages': [i for i in range(40,50)]},
+    {'Order': 7, 'NI band': '50-59', 'Ages': [i for i in range(50,60)]},
+    {'Order': 8, 'NI band': '60-69', 'Ages': [i for i in range(60,70)]},
+    {'Order': 9, 'NI band': '70-79', 'Ages': [i for i in range(70,80)]},
+    {'Order': 10, 'NI band': '80+', 'Ages': [i for i in range(80,91)]},
 ])
 
 # List of comparable age bands, with ordering for plotting
 all_age_bands_lookup = pandas.DataFrame([
-    {'Order': 0, 'NI bands': ['Under 12'], 'Band': 'Under 12', 'Ages': [i for i in range(12)], 'Eng bands': ['Under 12']},
-    {'Order': 1, 'NI bands': ['12-15'], 'Band': '12-15', 'Ages': [i for i in range(12,16)], 'Eng bands': ['12-15']},
-    {'Order': 2, 'NI bands': ['16-17'], 'Band': '16-17', 'Ages': [i for i in range(16,18)], 'Eng bands': ['16-17']},
-    {'Order': 3, 'NI bands': ['18-29'], 'Band': '18-29', 'Ages': [i for i in range(18,30)], 'Eng bands': ['18-24','25-29']},
-    {'Order': 4, 'NI bands': ['30-39'], 'Band': '30-39', 'Ages': [i for i in range(30,40)], 'Eng bands': ['30-34','35-39']},
-    {'Order': 5, 'NI bands': ['40-49'], 'Band': '40-49', 'Ages': [i for i in range(40,50)], 'Eng bands': ['40-44','45-49']},
-    {'Order': 6, 'NI bands': ['50-59'], 'Band': '50-59', 'Ages': [i for i in range(50,60)], 'Eng bands': ['50-54','55-59']},
-    {'Order': 7, 'NI bands': ['60-69'], 'Band': '60-69', 'Ages': [i for i in range(60,70)], 'Eng bands': ['60-64','65-69']},
-    {'Order': 8, 'NI bands': ['70-79'], 'Band': '70-79', 'Ages': [i for i in range(70,80)], 'Eng bands': ['70-74','75-79']},
-    {'Order': 9, 'NI bands': ['80+'], 'Band': '80+', 'Ages': [i for i in range(80,91)], 'Eng bands': ['80+']},
+    {'Order': 0, 'NI bands': ['Under 5'], 'Band': 'Under 5', 'Ages': [i for i in range(5)], 'Eng bands': ['Under 5']},
+    {'Order': 1, 'NI bands': ['5-11'], 'Band': '5-11', 'Ages': [i for i in range(5, 11)], 'Eng bands': ['5-11']},
+    {'Order': 2, 'NI bands': ['12-15'], 'Band': '12-15', 'Ages': [i for i in range(12,16)], 'Eng bands': ['12-15']},
+    {'Order': 3, 'NI bands': ['16-17'], 'Band': '16-17', 'Ages': [i for i in range(16,18)], 'Eng bands': ['16-17']},
+    {'Order': 4, 'NI bands': ['18-29'], 'Band': '18-29', 'Ages': [i for i in range(18,30)], 'Eng bands': ['18-24','25-29']},
+    {'Order': 5, 'NI bands': ['30-39'], 'Band': '30-39', 'Ages': [i for i in range(30,40)], 'Eng bands': ['30-34','35-39']},
+    {'Order': 6, 'NI bands': ['40-49'], 'Band': '40-49', 'Ages': [i for i in range(40,50)], 'Eng bands': ['40-44','45-49']},
+    {'Order': 7, 'NI bands': ['50-59'], 'Band': '50-59', 'Ages': [i for i in range(50,60)], 'Eng bands': ['50-54','55-59']},
+    {'Order': 8, 'NI bands': ['60-69'], 'Band': '60-69', 'Ages': [i for i in range(60,70)], 'Eng bands': ['60-64','65-69']},
+    {'Order': 9, 'NI bands': ['70-79'], 'Band': '70-79', 'Ages': [i for i in range(70,80)], 'Eng bands': ['70-74','75-79']},
+    {'Order': 10, 'NI bands': ['80+'], 'Band': '80+', 'Ages': [i for i in range(80,91)], 'Eng bands': ['80+']},
 ])
 
 def get_ni_comparable_population_age_bands():
@@ -147,12 +150,12 @@ def get_ni_headline_data(driver, s3, bucketname, last_updated, s3_dir, store):
             driver, 20).until(
                 EC.visibility_of_all_elements_located((
                     By.CSS_SELECTOR,
-                    ".preTextWithEllipsis"
+                    ".visualTitle"
                 ))
             )
         ]
     items = [
-        my_elem.text for my_elem in WebDriverWait(
+        my_elem.find_element_by_tag_name('svg').get_attribute('aria-label') for my_elem in WebDriverWait(
             driver, 20).until(
                 EC.visibility_of_all_elements_located((
                     By.CSS_SELECTOR,
@@ -161,8 +164,8 @@ def get_ni_headline_data(driver, s3, bucketname, last_updated, s3_dir, store):
             )
         ]
     df = pandas.DataFrame({'Dose': headers[1:], 'Total': items[1:len(headers)]})
-    df['Total'] = df['Total'].str.replace(',','').astype(int)
-    df['Dose'] = df['Dose'].str.extract(r'\((.*)\)')
+    df['Total'] = df['Total'].str.replace(',','').str.extract(r'\s(\d+)').astype(int)
+    df['Dose'] = df['Dose'].str.replace('\n',' ').str.extract(r'(Dose 1|Dose 2|Dose 3|Spring Booster|Booster)')
     keyname = '%s/doses.csv' % s3_dir
     datastore = update_datastore(s3, bucketname, keyname, last_updated, df, store)
     return datastore
@@ -173,29 +176,7 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir, store):
     age_bands = all_age_bands_lookup.explode('NI bands').reset_index()
     # Navigate to page 5 of the report
     pbi_goto_page(driver, 5)
-    # Extract the table content
-    items = [
-        my_elem.text for my_elem in WebDriverWait(
-            driver, 20).until(
-                EC.visibility_of_all_elements_located((
-                    By.CSS_SELECTOR,
-                    ".tableEx .innerContainer .bodyCells div div div .pivotTableCellWrap"
-                ))
-            )
-        ]
-    headers = [item for item in items if ('-' in item) or ('+' in item)]
-    cells = [item for item in items if ('-' not in item) and ('+' not in item) and ('%' not in item)]
-    if headers[-1] == '16-17':
-        headers.insert(0, headers[-1])
-        headers = headers[:-1]
-        cells.insert(0, cells[-2])
-        cells.insert(len(headers), cells[-1])
-        cells = cells[:-2]
-    elif (headers[0] != '12-15'):
-        raise Exception('Unknown table format')
-    ni = pandas.DataFrame({'Age Band': headers, 'Total': cells[len(headers):]})
-    ni['Total'] = ni['Total'].str.replace(',','').astype(int)
-    # Right click on the bubble chart
+    # Right click on the chart
     WebDriverWait(driver, 20).until(EC.element_to_be_clickable((By.CLASS_NAME, "visual-columnChart")))
     webdriver.ActionChains(driver).context_click(driver.find_element_by_class_name("visual-columnChart")).perform()
     # Click show as table
@@ -212,19 +193,17 @@ def get_ni_age_band_data(driver, s3, bucketname, last_updated, s3_dir, store):
         ]
     headers = [item for item in items if ('-' in item) or ('+' in item)]
     cells = [item for item in items if ('-' not in item) and ('+' not in item) and ('%' not in item)]
-    df = pandas.DataFrame({
+    ni = pandas.DataFrame({
         'Age Band': headers,
-        'First Doses': cells[len(headers):len(headers)*2],
-        'Second Doses': cells[len(headers)*2:len(headers)*3],
-        'Booster Doses': cells[0:len(headers)],
-        'Third Doses': cells[len(headers)*3:len(headers)*4],
+        'First Doses': cells[0:len(headers)],
+        'Second Doses': cells[len(headers):len(headers)*2],
+        'Third Doses': cells[len(headers)*2:len(headers)*3],
+        'Booster Doses': cells[len(headers)*3:len(headers)*4],
     })
-    df['First Doses'] = df['First Doses'].str.replace(',','').astype(int)
-    df['Second Doses'] = df['Second Doses'].str.replace(',','').astype(int)
-    df['Third Doses'] = df['Third Doses'].str.replace(r'^\s*$','0').str.replace(',','').astype(int)
-    df['Booster Doses'] = df['Booster Doses'].str.replace(r'^\s*$','0').str.replace(',','').astype(int)
-    ni = ni.merge(df, how='left', on='Age Band').drop(columns='First Doses')
-    ni.rename(columns={'Total': 'First Doses'}, inplace=True)
+    ni['First Doses'] = ni['First Doses'].str.replace(',','').astype(int)
+    ni['Second Doses'] = ni['Second Doses'].str.replace(',','').astype(int)
+    ni['Third Doses'] = ni['Third Doses'].str.replace(r'^\s*$','0').str.replace(',','').astype(int)
+    ni['Booster Doses'] = ni['Booster Doses'].str.replace(r'^\s*$','0').str.replace(',','').astype(int)
     # Combine into age bands
     ni = ni.merge(age_bands, how='inner', left_on='Age Band', right_on='NI bands', validate='1:1')
     ni_as_reported = ni.groupby(['Age Band']).sum()[['First Doses','Second Doses','Third Doses','Booster Doses']].reset_index()
@@ -577,26 +556,32 @@ def make_headline_tweets(df, source, last_updated):
     latest = df[df['Date']==df['Date'].max()]
     previous = df[df['Date']!=df['Date'].max()]
     previous = previous[previous['Date']==previous['Date'].max()]
-    total_reg = int(latest['Total'].sum() - previous['Total'].sum())
+    total_reg = int(
+        latest['Total'].sum() -
+        latest[latest['Dose']=='Spring Booster']['Total'].sum() -
+        previous['Total'].sum() +
+        previous[previous['Dose']=='Spring Booster']['Total'].sum()
+    )
     if total_reg <= 0:
         return None
     first_reg = int(latest[latest['Dose']=='Dose 1']['Total'].sum() - previous[previous['Dose']=='Dose 1']['Total'].sum())
     second_reg = int(latest[latest['Dose']=='Dose 2']['Total'].sum() - previous[previous['Dose']=='Dose 2']['Total'].sum())
     third_reg = int(latest[latest['Dose']=='Dose 3']['Total'].sum() - previous[previous['Dose']=='Dose 3']['Total'].sum())
     booster_reg = int(latest[latest['Dose']=='Booster']['Total'].sum() - previous[previous['Dose']=='Booster']['Total'].sum())
+    sbooster_reg = int(latest[latest['Dose']=='Spring Booster']['Total'].sum() - previous[previous['Dose']=='Spring Booster']['Total'].sum())
     tweets = []
-    tweets.append('''{doses_24:,} COVID-19 vaccine doses registered in NI on {date}
+    tweets.append('''{doses_24:,} COVID-19 vaccinations reported in NI today
 \u2022 {f_24:,} first
 \u2022 {s_24:,} second
 \u2022 {t_24:,} third
-\u2022 {b_24:,} booster
+\u2022 {b_24:,} booster ({sb_24:,} spring)
 \u2022 {pct_f}/{pct_s}/{pct_t}/{pct_b}% dose mix
 
 {total:,} in total
 \u2022 {total_f:,} first
 \u2022 {total_s:,} second
 \u2022 {total_t:,} third
-\u2022 {total_b:,} booster
+\u2022 {total_b:,} booster ({total_sb:,} spring)
 
 {source}'''.format(
         doses_24=total_reg,
@@ -604,22 +589,26 @@ def make_headline_tweets(df, source, last_updated):
         s_24=second_reg,
         t_24=third_reg,
         b_24=booster_reg,
-        total=int(latest['Total'].sum()),
+        sb_24=sbooster_reg,
+        total=int(latest['Total'].sum() - latest[latest['Dose']=='Spring Booster']['Total'].sum()),
         total_f=int(latest[latest['Dose']=='Dose 1']['Total'].sum()),
         total_s=int(latest[latest['Dose']=='Dose 2']['Total'].sum()),
         total_t=int(latest[latest['Dose']=='Dose 3']['Total'].sum()),
         total_b=int(latest[latest['Dose']=='Booster']['Total'].sum()),
+        total_sb=int(latest[latest['Dose']=='Spring Booster']['Total'].sum()),
         pct_f=int(first_reg/total_reg * 100),
         pct_s=int(second_reg/total_reg * 100),
         pct_t=int(third_reg/total_reg * 100),
-        pct_b=int(booster_reg/total_reg * 100),
+        pct_b=int((booster_reg-sbooster_reg)/total_reg * 100),
         date=last_updated.strftime('%A %-d %B %Y'),
         source= 'https://coronavirus.data.gov.uk/' if source=='PHE' else 'https://covid-19.hscni.net/ni-covid-19-vaccinations-dashboard/'
     ))
 
     blocks = ['','','','']
     for i in range(20):
-        if (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 2']['Total'].sum() / 1597898):
+        if (i*5)+5 <= (100 * (latest[latest['Dose']=='Dose 3']['Total'].sum()+latest[latest['Dose']=='Booster']['Total'].sum()-latest[latest['Dose']=='Spring Booster']['Total'].sum()) / 1597898):
+            blocks[i//5] += arrow_block
+        elif (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 2']['Total'].sum() / 1597898):
             blocks[i//5] += green_block
         elif (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 1']['Total'].sum() / 1597898):
             blocks[i//5] += white_block
@@ -629,7 +618,7 @@ def make_headline_tweets(df, source, last_updated):
 
 \u2022 {pop_f:.1%} first
 \u2022 {pop_s:.1%} second
-\u2022 {pop_b:.1%} third/booster
+\u2022 {pop_b:.1%} third/booster (excluding spring)
 
 {blocks0}
 {blocks1}
@@ -638,16 +627,18 @@ def make_headline_tweets(df, source, last_updated):
 
 One block is one person in 20
 
-{green} - 2nd dose received
-{white} - 1st dose received
+{arrow} - 3rd/booster
+{green} - 2nd dose
+{white} - 1st dose
 {black} - no doses'''.format(
         pop_f=latest[latest['Dose']=='Dose 1']['Total'].sum() / 1597898,
         pop_s=latest[latest['Dose']=='Dose 2']['Total'].sum() / 1597898,
-        pop_b=(latest[latest['Dose']=='Dose 3']['Total'].sum()+latest[latest['Dose']=='Booster']['Total'].sum()) / 1597898,
+        pop_b=(latest[latest['Dose']=='Dose 3']['Total'].sum()+latest[latest['Dose']=='Booster']['Total'].sum()-latest[latest['Dose']=='Spring Booster']['Total'].sum()) / 1597898,
         blocks0=blocks[0],
         blocks1=blocks[1],
         blocks2=blocks[2],
         blocks3=blocks[3],
+        arrow=arrow_block,
         green=green_block,
         white=white_block,
         black=black_block
@@ -704,7 +695,7 @@ def lambda_handler(event, context):
                 logging.exception('Caught exception in scraping/plotting')
         try:
             if ni_age_bands_reported is not None:
-                tweets.append('NI COVID-19 first doses by age band\n\n')
+                tweets.append('First doses by age band\n\n')
                 first = True
                 for _,data in ni_age_bands_reported.to_dict('index').items():
                     fstring = '\u2022 {band}: {pct_done:.1%}'
@@ -722,7 +713,7 @@ def lambda_handler(event, context):
                             new=int(data['First Doses']-data.get('Previous First',0)),
                         )
                         first = False
-                tweets.append('NI COVID-19 second doses by age band\n\n')
+                tweets.append('Second doses by age band\n\n')
                 first = True
                 for _,data in ni_age_bands_reported.to_dict('index').items():
                     if data['Second Doses'] > 0:
@@ -745,7 +736,7 @@ def lambda_handler(event, context):
                                 new=int(change),
                             )
                             first = False
-                tweets.append('NI COVID-19 third/booster doses by age band\n\n')
+                tweets.append('Third/booster doses (not spring) by age band\n\n')
                 first = True
                 for _,data in ni_age_bands_reported.to_dict('index').items():
                     if (data['Third Doses'] + data['Booster Doses']) > 0:
