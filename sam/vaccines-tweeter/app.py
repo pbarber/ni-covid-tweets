@@ -736,7 +736,7 @@ def lambda_handler(event, context):
                                 new=int(change),
                             )
                             first = False
-                tweets.append('Third/booster doses (not spring) by age band\n\n')
+                tweets.append('3rd/booster (not spring) age bands\n\n')
                 first = True
                 for _,data in ni_age_bands_reported.to_dict('index').items():
                     if (data['Third Doses'] + data['Booster Doses']) > 0:
