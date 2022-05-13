@@ -599,7 +599,7 @@ def make_headline_tweets(df, source, last_updated):
         pct_f=int(first_reg/total_reg * 100),
         pct_s=int(second_reg/total_reg * 100),
         pct_t=int(third_reg/total_reg * 100),
-        pct_b=int((booster_reg-sbooster_reg)/total_reg * 100),
+        pct_b=int(booster_reg/total_reg * 100),
         date=last_updated.strftime('%A %-d %B %Y'),
         source= 'https://coronavirus.data.gov.uk/' if source=='PHE' else 'https://covid-19.hscni.net/ni-covid-19-vaccinations-dashboard/'
     ))
