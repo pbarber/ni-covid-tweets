@@ -276,6 +276,72 @@ def check_nisra(secret, s3, notweet):
 
     return message
 
+def check_for_ons_files(s3client, bucket, previous):
+    session = requests.Session()
+
+    # Attempt to pull the link to this week's publications
+    url = 'https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditionsanddiseases/datasets/covid19infectionsurveynorthernireland'
+    html = BeautifulSoup(
+        get_url(
+            session,
+            url,
+            'text',
+            useragent=generate_user_agent()
+        )
+        ,features="html.parser")
+    durl = None
+    for a in html.find_all('a', href=True):
+        if a.text.strip()[:4] == 'xlsx':
+            durl = a['href']
+            break
+    if durl is None:
+        raise Exception('Failed to find link to ONS infection survey at %s' %url)
+    if durl.startswith('/'):
+        durl = 'https://www.ons.gov.uk' + durl
+    # Example: https://www.ons.gov.uk/file?uri=%2fpeoplepopulationandcommunity%2fhealthandsocialcare%2fconditionsanddiseases%2fdatasets%2fcovid19infectionsurveynorthernireland%2f2022/20220520covid19infectionsurveydatasetsni.xlsx
+    # Example: https://www.ons.gov.uk/file?uri=%2fpeoplepopulationandcommunity%2fhealthandsocialcare%2fconditionsanddiseases%2fdatasets%2fcovid19infectionsurveynorthernireland%2f2021/20220107covid19infectionsurveydatasetsni.xlsx
+    resp = session.head(durl)
+    regex = re.compile(r'(\d{8})covid19infectionsurveydatasetsni\.(?:xlsx|XLSX)$', flags=re.IGNORECASE)
+    m = regex.search(durl)
+    if m is None:
+        raise Exception('Failed to find ONS infection survey date in %s' %durl)
+    datestr = m.group(1)
+    filedate = datetime.datetime.strptime(datestr,'%Y%m%d')
+    metadata = {'url': durl, 'filedate': filedate.date().isoformat()}
+
+    # Merge the new data into the previous list and detect changes
+    index, changes = check_file_list_against_previous([metadata], previous)
+    # Upload the changed files to s3
+    index = upload_changes_to_s3(s3client, bucket, 'ONS-infections', index, changes, 'xslx')
+    return index, changes
+
+def check_ons(secret, s3, notweet):
+    indexkey = secret['ons-infection-index']
+
+    # Get the previous data file list from S3
+    status = S3_scraper_index(s3, secret['bucketname'], indexkey)
+    previous = status.get_dict()
+    previous = sorted(previous, key=lambda k: k['filedate'], reverse=True)
+
+    # Check the ONS site for file changes
+    current, changes = check_for_ons_files(s3, secret['bucketname'], previous)
+
+    # Write any changes back to S3
+    if len(changes) > 0:
+        status.put_dict(current)
+        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
+
+        # If the most recent file has changed then tweet
+        totweet = [c['index'] for c in changes if (c['change'] == 'added') or (c['index'] == 0)]
+        if not notweet and (0 in totweet):
+            print('Launching ONS tweeter')
+            launch_lambda_async(os.getenv('ONS_TWEETER_LAMBDA'),[current[a] for a in totweet])
+            message += ', and launched ONS tweet lambda'
+    else:
+        message = 'Did nothing'
+
+    return message
+
 def requests_stream(session, url):
     with session.get(url, stream=True) as stream:
         stream.raise_for_status()
@@ -462,6 +528,10 @@ def lambda_handler(event, context):
             messages.append(check_bulletins(secret, s3, event.get('bulletin-notweet', False)))
         except:
             logging.exception('Caught exception accessing PHA bulletin data')
+        try:
+            messages.append(check_ons(secret, s3, event.get('ons-notweet', False)))
+        except:
+            logging.exception('Caught exception accessing DOH daily data')
 
     return {
         "statusCode": 200,
