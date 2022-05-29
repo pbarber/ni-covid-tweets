@@ -44,6 +44,13 @@ def lambda_handler(event, context):
             latest = df.iloc[-1]
             prev = df.iloc[-2]
 
+            df2 = pandas.read_excel(stream,engine='openpyxl',sheet_name='1b', header=4)
+            df2.dropna('columns',how='all',inplace=True)
+            df2.dropna('rows',subset=['95% Lower credible interval'],inplace=True)
+            df2['Date'] = pandas.to_datetime(df2['Date'], format='%d %B %Y')
+            df2['95% Lower credible interval'] = df2['95% Lower credible interval']/100
+            df2['95% Upper credible interval'] = df2['95% Upper credible interval']/100
+
             tweets = []
             plots = []
             tweet = '''ONS infection survey for NI, week ending {period}
@@ -146,6 +153,83 @@ https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditio
                     p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
                     plotstore.seek(0)
                     plots.append({'name': plotname, 'store': plotstore})
+                    p = altair.vconcat(
+                        altair.hconcat(
+                            altair.Chart(
+                                df2
+                            ).mark_area(
+                                opacity=0.7
+                            ).encode(
+                                x = altair.X(
+                                    'Date:T',
+                                    axis=altair.Axis(title='Date')
+                                ),
+                                y = altair.Y(
+                                    '95% Lower credible interval:Q',
+                                    axis=altair.Axis(
+                                        title='% of population testing positive',
+                                        orient="right",
+                                        format='%',
+                                    )
+                                ),
+                                y2 = altair.Y2(
+                                    '95% Upper credible interval:Q'
+                                ),
+                            ).properties(
+                                height=450,
+                                width=400
+                            ),
+                            altair.Chart(
+                                df2
+                            ).mark_area(
+                                opacity=0.7
+                            ).encode(
+                                x = altair.X(
+                                    'Date:T',
+                                    axis=altair.Axis(title='Date')
+                                ),
+                                y = altair.Y(
+                                    '95% Lower credible interval:Q',
+                                    axis=altair.Axis(
+                                        title='% of population testing positive (log scale)',
+                                        orient="right",
+                                        format='%',
+                                    ),
+                                    scale=altair.Scale(
+                                        type='log'
+                                    ),
+                                ),
+                                y2 = altair.Y2(
+                                    '95% Upper credible interval:Q'
+                                ),
+                            ).properties(
+                                height=450,
+                                width=400
+                            )
+                        ).properties(
+                            title=altair.TitleParams(
+                                'Modelled daily rates of percentage of NI population testing positive for COVID-19 to %s' %(df2['Date'].max().strftime('%-d %B %Y')),
+                                anchor='middle',
+                            )
+                        )
+                    ).properties(
+                        title=altair.TitleParams(
+                            ['Modelled daily data from ONS COVID-19 infection survey',
+                            'Use linear scale (left) to compare values and log scale (right) to compare rate of change',
+                            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
+                            baseline='bottom',
+                            orient='bottom',
+                            anchor='end',
+                            fontWeight='normal',
+                            fontSize=10,
+                            dy=10
+                        ),
+                    )
+                    plotname = 'ons-modelled-daily-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m')
+                    plotstore = io.BytesIO()
+                    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+                    plotstore.seek(0)
+                    plots.append({'name': plotname, 'store': plotstore})
             except:
                 logging.exception('Error creating plot')
 
@@ -157,7 +241,7 @@ https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditio
                     upload_ids = api.upload_multiple(plots)
                     if change.get('testtweet') is True:
                         if len(upload_ids) > 0:
-                            resp = api.dm(secret['twitter_dmaccount'], tweet, upload_ids[0])
+                            resp = api.dm(secret['twitter_dmaccount'], tweet, upload_ids[-1])
                         else:
                             resp = api.dm(secret['twitter_dmaccount'], tweet)
                         messages.append('Tweeted DM ID %s' %(resp.id))
