@@ -9,7 +9,7 @@ import altair
 
 from shared import S3_scraper_index
 from twitter_shared import TwitterAPI
-from plot_shared import get_chrome_driver
+from plot_shared import get_chrome_driver, plot_heatmap
 
 good_symb = '\u2193'
 bad_symb = '\u2191'
@@ -25,6 +25,7 @@ def lambda_handler(event, context):
     status = S3_scraper_index(s3, secret['bucketname'], secret['ons-infection-index'])
     index = status.get_dict()
 
+    messages = []
     try:
         # Download the most recently updated Excel file
         for change in event:
@@ -50,6 +51,19 @@ def lambda_handler(event, context):
             df2['Date'] = pandas.to_datetime(df2['Date'], format='%d %B %Y')
             df2['95% Lower credible interval'] = df2['95% Lower credible interval']/100
             df2['95% Upper credible interval'] = df2['95% Upper credible interval']/100
+
+            age = pandas.read_excel(stream,engine='openpyxl',sheet_name='1e', header=[4,5])
+            age.dropna('columns',how='all',inplace=True)
+            age.dropna('rows', subset=[('Age 2', 'Modelled % testing positive for COVID-19')], inplace=True)
+            age = age.set_index(('Date', 'Unnamed: 0_level_1')).stack(level=0).reset_index(level=1)
+            age.index.names = ['Date']
+            age.rename({'level_1': 'Age'}, axis='columns', inplace=True)
+            age.reset_index(inplace=True)
+            age['Date'] = age['Date'].dt.strftime('%Y-%m-%d').str.slice(stop=10)
+            age['Age order'] = age['Age'].str.extract(r'Age (\d+)').astype(int)
+            age['Age'] = age['Age'].str.extract(r'Age (.+)')
+            age['95% Lower confidence interval'] = age['95% Lower confidence interval']/100
+            age['95% Upper confidence interval'] = age['95% Upper confidence interval']/100
 
             tweets = []
             plots = []
@@ -137,7 +151,8 @@ https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditio
                         )
                     ).properties(
                         title=altair.TitleParams(
-                            ['Data from ONS',
+                            ['Data from ONS COVID-19 infection survey',
+                            'Shaded area shows 95% confidence',
                             'Use linear scale (left) to compare values and log scale (right) to compare rate of change',
                             'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
                             baseline='bottom',
@@ -215,6 +230,7 @@ https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditio
                     ).properties(
                         title=altair.TitleParams(
                             ['Modelled daily data from ONS COVID-19 infection survey',
+                            'Shaded area shows 95% confidence',
                             'Use linear scale (left) to compare values and log scale (right) to compare rate of change',
                             'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
                             baseline='bottom',
@@ -230,10 +246,95 @@ https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditio
                     p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
                     plotstore.seek(0)
                     plots.append({'name': plotname, 'store': plotstore})
+                    toplot = age[(age['Date'] == age['Date'].max())]
+                    p = altair.vconcat(
+                        altair.hconcat(
+                            altair.Chart(
+                                toplot
+                            ).mark_bar(
+                                opacity=0.7
+                            ).encode(
+                                x = altair.X(
+                                    'Age',
+                                    axis=altair.Axis(title='Age'),
+                                    sort=altair.EncodingSortField(field="Age order"),
+                                ),
+                                y = altair.Y(
+                                    '95% Lower confidence interval:Q',
+                                    axis=altair.Axis(
+                                        title='% of population testing positive',
+                                        orient="right",
+                                        format='%',
+                                    )
+                                ),
+                                y2 = altair.Y2(
+                                    '95% Upper confidence interval:Q'
+                                ),
+                            ).properties(
+                                height=450,
+                                width=800
+                            )
+                        ).properties(
+                            title=altair.TitleParams(
+                                'Age distribution of modelled daily rates of NI population testing positive for COVID-19 on %s' %(pandas.to_datetime(toplot['Date'], format='%Y-%m-%d').max().strftime('%-d %B %Y')),
+                                anchor='middle',
+                            )
+                        )
+                    ).properties(
+                        title=altair.TitleParams(
+                            ['Modelled daily data from ONS COVID-19 infection survey',
+                            'Shaded area shows 95% confidence',
+                            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
+                            baseline='bottom',
+                            orient='bottom',
+                            anchor='end',
+                            fontWeight='normal',
+                            fontSize=10,
+                            dy=10
+                        ),
+                    )
+                    plotname = 'ons-modelled-age-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m')
+                    plotstore = io.BytesIO()
+                    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+                    plotstore.seek(0)
+                    plots.append({'name': plotname, 'store': plotstore})
+                    heatmap2 = plot_heatmap(age, 'Date', 'Date', 'Date', 'Age', 'Age order', 'Age', 'Modelled % testing positive for COVID-19', '% testing positive')
+                    p = altair.vconcat(
+                        altair.layer(
+                            heatmap2.properties(
+                                height=450,
+                                width=800,
+                                title='Age distribution of modelled daily rates of NI population testing positive for COVID-19 (%s to %s)' %(pandas.to_datetime(age['Date'], format='%Y-%m-%d').min().strftime('%-d %B %Y'),pandas.to_datetime(age['Date'], format='%Y-%m-%d').max().strftime('%-d %B %Y')),
+                            ),
+#                            heatmap2.mark_text(
+#                                align='right',
+#                                baseline='middle',
+#                                dx=43
+#                            ).encode(
+#                                text = altair.Text('Most Recent Positive per 100k'),
+#                                color = altair.value('black')
+#                            )
+                        )
+                    ).properties(
+                        title=altair.TitleParams(
+                            ['Modelled daily data from ONS COVID-19 infection survey',
+                            'https://twitter.com/ni_covid19_data on %s'  %datetime.datetime.now().date().strftime('%A %-d %B %Y')],
+                            baseline='bottom',
+                            orient='bottom',
+                            anchor='end',
+                            fontWeight='normal',
+                            fontSize=10,
+                            dy=10
+                        ),
+                    )
+                    plotname = 'ons-modelled-age-heatmap-%s.png'%datetime.datetime.now().date().strftime('%Y-%d-%m')
+                    plotstore = io.BytesIO()
+                    p.save(fp=plotstore, format='png', method='selenium', webdriver=driver)
+                    plotstore.seek(0)
+                    plots.append({'name': plotname, 'store': plotstore})
             except:
                 logging.exception('Error creating plot')
 
-            messages = []
             for idx in range(len(tweets)):
                 tweet = tweets[idx]
                 if change.get('notweet') is not True:
