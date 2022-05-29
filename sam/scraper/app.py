@@ -133,6 +133,46 @@ def check_for_dd_files(s3client, bucket, previous, files_to_check, store=True):
     index = upload_changes_to_s3(s3client, bucket, 'DoH-DD', index, changes, 'xlsx')
     return index, changes
 
+def check_for_hospital_files(s3client, bucket, previous, files_to_check=1, store=True):
+    session = requests.Session()
+    session.headers = {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'User-Agent': generate_user_agent(),
+        'Upgrade-Insecure-Requests': '1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+    }
+    html = BeautifulSoup(get_url(session, 'https://www.health-ni.gov.uk/articles/covid-19-dashboard-updates', 'text'),features="html.parser")
+    durl = None
+    for a in html.find_all('a', href=True):
+        if a.text.strip().lower().startswith('covid-19 hospitalisations'):
+            durl = a['href']
+    if durl is None:
+        raise('Unable to find starting URL')
+    url = 'https://www.health-ni.gov.uk/' + durl.lstrip('/')
+    # Attempt to pull this month's list of daily data publications
+    excels = []
+    # Pull last month's as well, if we need to, to ensure we always have N days of data checked, or just get everything
+    while (len(excels) < files_to_check) or ((files_to_check == 0)):
+        excels.extend(
+            extract_doh_file_list(
+                get_url(
+                    session,
+                    url,
+                    'text',
+                ),
+                files_to_check-len(excels),
+                r'-(\d{6}).*\.xlsx$',
+                datefmt='%d%m%y'
+            )
+        )
+    # Merge the new data into the previous list and detect changes
+    index, changes = check_file_list_against_previous(excels, previous)
+    # Upload the changed files to s3
+    index = upload_changes_to_s3(s3client, bucket, 'DoH-hospitalisations', index, changes, 'xlsx')
+    return index, changes
+
 def check_for_r_files(s3client, bucket, previous):
     session = requests.Session()
     # Attempt to pull the list of R number publications
@@ -158,6 +198,9 @@ def check_doh(secret, s3, notweet, mode):
     if mode=='dd':
         indexkey = secret['doh-dd-index']
         lambdaname = os.getenv('TWEETER_LAMBDA')
+    elif mode=='hospital':
+        indexkey = secret['doh-hospital-index']
+        lambdaname = os.getenv('HOSPITAL_TWEETER_LAMBDA')
     else:
         indexkey = secret['doh-r-index']
         lambdaname = os.getenv('R_TWEETER_LAMBDA')
@@ -170,6 +213,8 @@ def check_doh(secret, s3, notweet, mode):
     # Check the DoH site for file changes
     if mode=='dd':
         current, changes = check_for_dd_files(s3, secret['bucketname'], previous, int(secret['doh-dd-files-to-check']), store=(not notweet))
+    elif mode=='hospital':
+        current, changes = check_for_hospital_files(s3, secret['bucketname'], previous, store=(not notweet))
     else:
         current, changes = check_for_r_files(s3, secret['bucketname'], previous)
 
@@ -505,9 +550,9 @@ def lambda_handler(event, context):
     else:
         # Run the scraper
         try:
-            messages.append(check_doh(secret, s3, event.get('tests-notweet', False), 'dd'))
+            messages.append(check_doh(secret, s3, event.get('hospital-notweet', False), 'hospital'))
         except:
-            logging.exception('Caught exception accessing DOH daily data')
+            logging.exception('Caught exception accessing DOH hospital data')
         try:
             messages.append(check_doh(secret, s3, event.get('r-notweet', False), 'r'))
         except:
