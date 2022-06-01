@@ -165,7 +165,8 @@ def lambda_handler(event, context):
                 if (report['filedate'] == last_week.strftime('%Y-%m-%d')) and ('totals' in report):
                     lastweek = report
                     break
-            tweet= '''{inpatients} inpatient{ips} reported'''.format(
+            tweet= '''{inpatients} inpatient{ips} reported on {date}'''.format(
+                    date=inpatients['Date'].max().strftime('%A %-d %B %Y'),
                     inpatients=totals['admissions'] - totals['discharges'],
                     ips='s' if ((totals['admissions'] - totals['discharges']) != 1) else ''
             )
