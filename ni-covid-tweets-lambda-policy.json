@@ -42,7 +42,8 @@
                 "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDCOGVariantsTweeter-tYoaY7AvKzP1",
                 "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDClusterTweeter-7MX2sAUilUlh",
                 "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDONSTweeter-UP9qW1Io6m4j",
-                "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDHospitalsTweeter-KLiQRoeRVTZg"
+                "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDHospitalsTweeter-KLiQRoeRVTZg",
+                "arn:aws:lambda:eu-west-2:018530147132:function:ni-covid-tweets-NICOVIDUKHSAVariantsTweeter-FLq8nmRrzzDO"
             ]
         }
     ]

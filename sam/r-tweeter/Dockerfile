@@ -15,11 +15,13 @@ RUN python3.8 -m pip install -r requirements.txt
 COPY shared/__init__.py ./shared/__init__.py
 COPY twitter_shared/__init__.py ./twitter_shared/__init__.py
 COPY plot_shared/__init__.py plot_shared/
+COPY data_shared/__init__.py data_shared/
 COPY r-tweeter/app.py ./
 COPY cluster-tweeter/app.py ./cluster_tweeter.py
 COPY bulletin-tweeter/app.py ./bulletin_tweeter.py
 COPY nisra-tweeter/app.py ./nisra_tweeter.py
 COPY ons-tweeter/app.py ./ons_tweeter.py
+COPY ukhsa-variants-tweeter/app.py ./ukhsa_variants_tweeter.py
 
 # Overwrite the command by providing a different command directly in the template.
 CMD ["app.lambda_handler"]

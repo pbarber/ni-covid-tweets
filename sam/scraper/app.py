@@ -345,7 +345,6 @@ def check_for_ons_files(s3client, bucket, previous):
         durl = 'https://www.ons.gov.uk' + durl
     # Example: https://www.ons.gov.uk/file?uri=%2fpeoplepopulationandcommunity%2fhealthandsocialcare%2fconditionsanddiseases%2fdatasets%2fcovid19infectionsurveynorthernireland%2f2022/20220520covid19infectionsurveydatasetsni.xlsx
     # Example: https://www.ons.gov.uk/file?uri=%2fpeoplepopulationandcommunity%2fhealthandsocialcare%2fconditionsanddiseases%2fdatasets%2fcovid19infectionsurveynorthernireland%2f2021/20220107covid19infectionsurveydatasetsni.xlsx
-    resp = session.head(durl)
     regex = re.compile(r'(\d{8})covid19infectionsurveydatasetsni\.(?:xlsx|XLSX)$', flags=re.IGNORECASE)
     m = regex.search(durl)
     if m is None:
@@ -439,6 +438,71 @@ def check_cog(secret, s3, notweet):
         print('Launching COG variants tweeter')
         launch_lambda_async(os.getenv('VARIANTS_TWEETER_LAMBDA'),latest)
         message += ', and launched variants tweet lambda'
+    else:
+        message = 'Did nothing'
+
+    return message
+
+def check_for_ukhsa_variants_files(s3client, bucket, previous):
+    session = requests.Session()
+    # Attempt to pull the index page for all publications
+    url = 'https://www.gov.uk/government/publications/covid-19-variants-genomically-confirmed-case-numbers'
+    html = BeautifulSoup(
+        get_url(
+            session,
+            url,
+            'text',
+            useragent=generate_user_agent(),
+        )
+        ,features="html.parser")
+    pages = []
+    for a in html.find_all('a', href=True):
+        if a.text.strip().startswith('Variants: distribution of case data'):
+            page = {}
+            if a['href'].startswith('/'):
+                page['url'] = 'https://www.gov.uk' + a['href']
+            else:
+                page['url'] = a['href']
+            regex = re.compile(r'(\d+\-[a-z]+\-\d{4})$', flags=re.IGNORECASE)
+            m = regex.search(page['url'])
+            if m is None:
+                raise Exception('Failed to find variant report date in %s' %page['url'])
+            datestr = m.group(1)
+            filedate = datetime.datetime.strptime(datestr,'%d-%B-%Y')
+            page['filedate'] = filedate.date().isoformat()
+            pages.append(page)
+    if len(pages) < 1:
+        raise Exception('Failed to find links to variant links at %s' %url)
+    # e.g. https://www.gov.uk/government/publications/covid-19-variants-genomically-confirmed-case-numbers/variants-distribution-of-case-data-27-may-2022
+    # Merge the new data into the previous list and detect changes
+    index, changes = check_file_list_against_previous(pages, previous)
+    # Upload the changed files to s3
+    index = upload_changes_to_s3(s3client, bucket, 'UKHSA-variants', index, changes, 'html')
+    return index, changes
+
+def check_ukhsa_variants(secret, s3, notweet):
+    indexkey = secret['ukhsa-variants-index']
+    lambdaname = os.getenv('UKHSA_VARIANTS_TWEETER_LAMBDA')
+
+    # Get the previous data file list from S3
+    status = S3_scraper_index(s3, secret['bucketname'], indexkey)
+    previous = status.get_dict()
+    previous = sorted(previous, key=lambda k: k['filedate'], reverse=True)
+
+    # Check the gov.uk site for file changes
+    current, changes = check_for_ukhsa_variants_files(s3, secret['bucketname'], previous)
+
+    # Write any changes back to S3
+    if len(changes) > 0:
+        status.put_dict(current)
+        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
+
+        # If the most recent file has changed then tweet
+        totweet = [c['index'] for c in changes if (c['change'] == 'added') or (c['index'] == 0)]
+        if not notweet and (0 in totweet):
+            print('Launching UKHSA variants tweeter')
+            launch_lambda_async(lambdaname,[current[a] for a in totweet])
+            message += ', and launched UKHSA variants tweet lambda'
     else:
         message = 'Did nothing'
 
@@ -562,9 +626,9 @@ def lambda_handler(event, context):
         except:
             logging.exception('Caught exception accessing NISRA weekly data')
         try:
-            messages.append(check_cog(secret, s3, event.get('cog-notweet', False)))
+            messages.append(check_ukhsa_variants(secret, s3, event.get('variants-notweet', False)))
         except:
-            logging.exception('Caught exception accessing COG variants data')
+            logging.exception('Caught exception accessing UKHSA variants data')
         try:
             messages.append(check_clusters(secret, s3, event.get('clusters-notweet', False)))
         except:
