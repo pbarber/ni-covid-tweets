@@ -197,7 +197,7 @@ def lambda_handler(event, context):
                 'text': tweet,
                 'url': change['url'],
                 'notweet': change.get('notweet', False),
-                'tweet': change.get('testtweet', False),
+                'testtweet': change.get('testtweet', False),
                 'totals': totals,
                 'filedate': change['filedate'],
                 'plots': plots
