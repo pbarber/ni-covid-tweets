@@ -52,7 +52,7 @@ def lambda_handler(event, context):
             df2['95% Lower credible interval'] = df2['95% Lower credible interval']/100
             df2['95% Upper credible interval'] = df2['95% Upper credible interval']/100
 
-            age = pandas.read_excel(stream,engine='openpyxl',sheet_name='1e', header=[4,5])
+            age = pandas.read_excel(stream,engine='openpyxl',sheet_name='1d', header=[4,5])
             age.dropna('columns',how='all',inplace=True)
             age.dropna('rows', subset=[('Age 2', 'Modelled % testing positive for COVID-19')], inplace=True)
             age = age.set_index(('Date', 'Unnamed: 0_level_1')).stack(level=0).reset_index(level=1)
