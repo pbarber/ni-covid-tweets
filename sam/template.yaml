@@ -33,7 +33,6 @@ Resources:
           R_TWEETER_LAMBDA: !Sub ${NICOVIDRTweeter.Arn}
           NISRA_TWEETER_LAMBDA: !Sub ${NICOVIDNISRADeathsTweeter.Arn}
           GENERIC_TWEETER_LAMBDA: !Sub ${NICOVIDGenericTweeter.Arn}
-          VARIANTS_TWEETER_LAMBDA: !Sub ${NICOVIDCOGVariantsTweeter.Arn}
           CLUSTERS_TWEETER_LAMBDA: !Sub ${NICOVIDClusterTweeter.Arn}
           ONS_TWEETER_LAMBDA: !Sub ${NICOVIDONSTweeter.Arn}
           HOSPITAL_TWEETER_LAMBDA: !Sub ${NICOVIDHospitalsTweeter.Arn}
@@ -194,47 +193,3 @@ Resources:
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
         MaximumRetryAttempts: 0
-  NICOVIDTestsCleaner:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: tests-cleaner/
-      Handler: app.lambda_handler
-      Runtime: python3.8
-      Timeout: 600
-      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
-      EventInvokeConfig:
-        MaximumRetryAttempts: 0
-  NICOVIDCOGVariantsTweeter:
-    Type: AWS::Serverless::Function
-    Properties:
-      PackageType: Image
-      Timeout: 600
-      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
-      MemorySize: 2048
-      ImageConfig:
-        Command:
-          - "variant_tweeter.lambda_handler"
-      EventInvokeConfig:
-        MaximumRetryAttempts: 0
-    Metadata:
-      DockerTag: tweeter-tag
-      DockerContext: ./
-      Dockerfile: tweeter/Dockerfile
-  NICOVIDVariants:
-    Type: AWS::Serverless::Function
-    Properties:
-      PackageType: Image
-      Timeout: 300
-      Role: arn:aws:iam::018530147132:role/ni-covid-tweets
-      MemorySize: 2048
-      EventInvokeConfig:
-        MaximumRetryAttempts: 0
-#      Events:
-#        InvocationLevel:
-#          Type: Schedule
-#          Properties:
-#            Schedule: rate(1 hour)
-    Metadata:
-      DockerTag: selenium-v2
-      DockerContext: ./
-      Dockerfile: variants/Dockerfile
