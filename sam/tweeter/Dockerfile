@@ -16,7 +16,6 @@ COPY twitter_shared/__init__.py twitter_shared/
 COPY plot_shared/__init__.py plot_shared/
 COPY data_shared/__init__.py data_shared/
 COPY tweeter/app.py .
-COPY variant-tweeter/app.py variant_tweeter.py
 COPY vaccines-tweeter/app.py vaccines_tweeter.py
 COPY hospitals-tweeter/app.py hospitals_tweeter.py
 
