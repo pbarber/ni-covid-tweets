@@ -77,14 +77,14 @@ def lambda_handler(event, context):
             compare['diff'] = (compare['Total confirmed and probable cases_x'] - compare['Total confirmed and probable cases_y']).fillna(0).astype(int)
             top5 = compare.nlargest(5, 'diff')
 
-            tweet = """{total:,d} new variant analyses reported on {currdate} ({altogether:,d} total):
+            tweet = """{total:,d} new variant analyses ({altogether:,d} total):
 """.format(
                 total=int(latest['Total confirmed and probable cases'].sum() - previous['Total confirmed and probable cases'].sum()),
                 currdate=latest['Date'].max().strftime('%-d %B'),
                 altogether=int(latest['Total confirmed and probable cases'].sum())
             )
             for variant,data in top5.to_dict('index').items():
-                if data['diff'] > 0:
+                if data['diff'] > 0 and data['diff'] != int(data['Total confirmed and probable cases_x']):
                     tweet += f"\u2022 {variant.replace('sub-lineage ', '')}: {int(data['diff']):,d} (of {int(data['Total confirmed and probable cases_x']):,d})\n"
             others = int(compare['diff'].sum() - top5['diff'].sum())
             if others != 0:
