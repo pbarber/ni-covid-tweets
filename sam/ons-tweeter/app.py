@@ -62,8 +62,9 @@ def lambda_handler(event, context):
             age['Date'] = age['Date'].dt.strftime('%Y-%m-%d').str.slice(stop=10)
             age['Age order'] = age['Age'].str.extract(r'Age (\d+)').astype(int)
             age['Age'] = age['Age'].str.extract(r'Age (.+)')
-            age['95% Lower confidence interval'] = age['95% Lower confidence interval']/100
-            age['95% Upper confidence interval'] = age['95% Upper confidence interval']/100
+            age['Modelled % testing positive for COVID-19'] = pandas.to_numeric(age['Modelled % testing positive for COVID-19'], errors='coerce')
+            age['95% Lower confidence interval'] = pandas.to_numeric(age['95% Lower confidence interval'], errors='coerce')/100
+            age['95% Upper confidence interval'] = pandas.to_numeric(age['95% Upper confidence interval'], errors='coerce')/100
 
             tweets = []
             plots = []
