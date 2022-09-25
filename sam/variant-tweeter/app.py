@@ -76,7 +76,10 @@ def lambda_handler(event, context):
         df['idx'] = match_idx
         # Join to the mapping based on indexes
         df = df.merge(mapping, how='left', left_on='idx', right_index=True).drop(columns=['idx','Pango lineages'])
+        # Remove unassigned samples
+        df = df[df['lineage'] != 'Unassigned']
         df['WHO label'] = df['WHO label'].fillna('Other')
+        print(df[df['WHO label'] == 'Other'].groupby(['Week of sample','lineage']).count())
         lin_by_week = df.groupby(['Week of sample','WHO label']).size().rename('count')
         lin_pc_by_week = lin_by_week/lin_by_week.groupby(level=0).sum()
         lin_by_week = pandas.DataFrame(lin_by_week).reset_index()
@@ -116,7 +119,7 @@ def lambda_handler(event, context):
             lineage = lineage.groupby('WHO label').sum()[['count_x','count_y']]
             lineage['count_y'] = lineage['count_y'].fillna(0)
             lineage['diff'] = (lineage['count_x'] - lineage['count_y']).fillna(0).astype(int)
-            if lineage['diff'].max() > 0:
+            if lineage['diff'].max() > 0 or event.get('tweetifnochange', False) is True:
                 top5 = lineage.nlargest(5, 'diff')
                 tweet = """{total:,d} new variant analyses reported for NI on {currdate} since {prevdate} ({altogether:,d} total):
 """.format(
