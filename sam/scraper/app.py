@@ -466,14 +466,11 @@ def check_for_cog_files(s3, bucketname, indexkey):
     if last > today:
         return None
 
-    logging.error(last)
-    exit()
-
     found = []
     while today >= last:
         url = "https://cog-uk.s3.climb.ac.uk/phylogenetics/{today}/cog_metadata.csv.gz".format(today=today.isoformat())
         resp = session.head(url)
-        if (resp.headers['Content-Type'] == 'binary/octet-stream'):
+        if (resp.headers['Content-Type'] == 'application/gzip'):
             modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
             if (modified.isoformat() != previous[0]['modified']) and (int(resp.headers['Content-Length']) != int(previous[0]['length'])):
                 found.append({
@@ -500,80 +497,10 @@ def check_cog(secret, s3, notweet):
     if latest is not None:
         message = 'Found file'
         print(latest)
-        print('Launching COG variants tweeter')
-        launch_lambda_async(os.getenv('VARIANTS_TWEETER_LAMBDA'),latest)
-        message += ', and launched variants tweet lambda'
-    else:
-        message = 'Did nothing'
-
-    return message
-
-def check_for_cluster_files(s3, bucketname, previous):
-    # Attempt to pull the list of cluster publications
-    session = requests.Session()
-    url = 'https://www.publichealth.hscni.net/publications/covid-19-clusteroutbreak-summary'
-    pdfs = extract_doh_file_list(get_url(session, url,'text'), 1, r'(\d{2}_\d{2}_\d{2})\.pdf$', datefmt='%d_%m_%y', element='span', htmlclass='file--application-pdf')
-    # Check whether we have new files
-    index, changes = check_file_list_against_previous(pdfs, previous)
-    # Upload the changed files to s3
-    index = upload_changes_to_s3(s3, bucketname, 'PHA-clusters', index, changes, 'pdf')
-    return index, changes
-
-def check_clusters(secret, s3, notweet):
-    indexkey = secret['pha-clusters-index']
-    previous, index = get_and_sort_index(secret['bucketname'], indexkey, s3, 'filedate')
-
-    # Check the PHA page for new/updated PDFs
-    current, changes = check_for_cluster_files(s3, secret['bucketname'], previous)
-
-    # Write any changes back to S3
-    if len(changes) > 0:
-        index.put_dict(current)
-        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
-
-        # If the most recent file has changed then tweet
-        totweet = [c['index'] for c in changes if (c['change'] == 'added') or (c['index'] == 0)]
-        if not notweet and (0 in totweet):
-            print('Launching PHA clusters tweeter')
-            launch_lambda_async(os.getenv('CLUSTERS_TWEETER_LAMBDA'),[current[a] for a in totweet])
-            message += ', and launched clusters tweet lambda'
-    else:
-        message = 'Did nothing'
-
-    return message
-
-def check_for_bulletin_files(s3, bucketname, previous):
-    # Attempt to pull the list of cluster publications
-    session = requests.Session()
-    url = 'https://www.publichealth.hscni.net/publications/coronavirus-bulletin'
-    pdfs = extract_doh_file_list(get_url(session, url,'text'), 1, r'files\/(\d{4}-\d{2})\/.+\.pdf$', datefmt='%Y-%m', element='span', htmlclass='file--application-pdf')
-    # Give proper dates to the files to prevent clashes (day is missing)
-    for i in range(len(pdfs)):
-        pdfs[i]['filedate'] = pdfs[i]['modified'][:10]
-    # Check whether we have new files
-    index, changes = check_file_list_against_previous(pdfs, previous)
-    # Upload the changed files to s3
-    index = upload_changes_to_s3(s3, bucketname, 'PHA-bulletin', index, changes, 'pdf')
-    return index, changes
-
-def check_bulletins(secret, s3, notweet):
-    indexkey = secret['pha-bulletin-index']
-    previous, index = get_and_sort_index(secret['bucketname'], indexkey, s3, 'filedate')
-
-    # Check the PHA page for new/updated PDFs
-    current, changes = check_for_bulletin_files(s3, secret['bucketname'], previous)
-
-    # Write any changes back to S3
-    if len(changes) > 0:
-        index.put_dict(current)
-        message = 'Wrote %d items to %s, of which %d were changes' %(len(current), indexkey, len(changes))
-
-        # If the most recent file has changed then tweet
-        totweet = [c['index'] for c in changes if (c['change'] == 'added') or (c['index'] == 0)]
-        if not notweet and (0 in totweet):
-            print('Launching generic tweeter for bulletins')
-            launch_lambda_async(os.getenv('GENERIC_TWEETER_LAMBDA'),[dict(current[a],type='PHA bulletin',tweet=False) for a in totweet])
-            message += ', and launched generic tweet lambda'
+        if not notweet:
+            print('Launching COG variants tweeter')
+            launch_lambda_async(os.getenv('COG_VARIANTS_TWEETER_LAMBDA'),latest)
+            message += ', and launched variants tweet lambda'
     else:
         message = 'Did nothing'
 

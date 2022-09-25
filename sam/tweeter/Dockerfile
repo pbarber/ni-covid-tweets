@@ -18,6 +18,7 @@ COPY data_shared/__init__.py data_shared/
 COPY tweeter/app.py .
 COPY vaccines-tweeter/app.py vaccines_tweeter.py
 COPY hospitals-tweeter/app.py hospitals_tweeter.py
+COPY variant-tweeter/app.py variant_tweeter.py
 
 # Overwrite the command by providing a different command directly in the template.
 CMD ["app.lambda_handler"]
