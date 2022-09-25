@@ -264,7 +264,7 @@ def check_for_nisra_files(s3client, bucket, previous):
         ,features="html.parser")
     durl = None
     for a in html.find_all('a', href=True):
-        if a.text.strip() == 'Latest Weekly Deaths Bulletin':
+        if a.text.strip() == 'Latest Weekly Deaths':
             durl = a['href']
             break
     if durl is None:
@@ -452,6 +452,62 @@ def check_ukhsa_variants(secret, s3, notweet):
 
     return message
 
+def check_for_cog_files(s3, bucketname, indexkey):
+    today = datetime.datetime.today().date()
+    session = requests.Session()
+
+    previous, index = get_and_sort_index(bucketname, indexkey, s3, 'filedate')
+
+    if len(previous) == 0:
+        last = datetime.datetime.strptime('2021-05-11', '%Y-%m-%d').date()
+    else:
+        last = datetime.datetime.strptime(previous[0]['filedate'], '%Y-%m-%d').date()
+
+    if last > today:
+        return None
+
+    logging.error(last)
+    exit()
+
+    found = []
+    while today >= last:
+        url = "https://cog-uk.s3.climb.ac.uk/phylogenetics/{today}/cog_metadata.csv.gz".format(today=today.isoformat())
+        resp = session.head(url)
+        if (resp.headers['Content-Type'] == 'binary/octet-stream'):
+            modified = datetime.datetime.strptime(resp.headers['Last-Modified'],'%a, %d %b %Y %H:%M:%S %Z') # e.g Mon, 08 Mar 2021 06:12:35 GMT
+            if (modified.isoformat() != previous[0]['modified']) and (int(resp.headers['Content-Length']) != int(previous[0]['length'])):
+                found.append({
+                    'url': url,
+                    'modified': modified.isoformat(),
+                    'length': int(resp.headers['Content-Length']),
+                    'filedate': today.isoformat(),
+                })
+        today -= datetime.timedelta(days=1)
+
+    if len(found) == 0:
+        return None
+
+    found.extend(previous)
+    index.put_dict(found)
+
+    return found[0]
+
+def check_cog(secret, s3, notweet):
+    # Check the COG bucket for file changes
+    latest = check_for_cog_files(s3, secret['bucketname'], secret['cog-variants-index'])
+
+    # Launch tweeter for any changes
+    if latest is not None:
+        message = 'Found file'
+        print(latest)
+        print('Launching COG variants tweeter')
+        launch_lambda_async(os.getenv('VARIANTS_TWEETER_LAMBDA'),latest)
+        message += ', and launched variants tweet lambda'
+    else:
+        message = 'Did nothing'
+
+    return message
+
 def check_for_cluster_files(s3, bucketname, previous):
     # Attempt to pull the list of cluster publications
     session = requests.Session()
@@ -562,29 +618,17 @@ def lambda_handler(event, context):
         except:
             logging.exception('Caught exception accessing DOH hospital data')
         try:
-            messages.append(check_doh(secret, s3, event.get('r-notweet', False), 'r'))
-        except:
-            logging.exception('Caught exception accessing DOH R number')
-        try:
             messages.append(check_nisra(secret, s3, event.get('nisra-notweet', False)))
         except:
             logging.exception('Caught exception accessing NISRA weekly data')
         try:
-            messages.append(check_ukhsa_variants(secret, s3, event.get('variants-notweet', False)))
-        except:
-            logging.exception('Caught exception accessing UKHSA variants data')
-        try:
-            messages.append(check_clusters(secret, s3, event.get('clusters-notweet', False)))
-        except:
-            logging.exception('Caught exception accessing PHA clusters data')
-        try:
-            messages.append(check_bulletins(secret, s3, event.get('bulletin-notweet', False)))
-        except:
-            logging.exception('Caught exception accessing PHA bulletin data')
-        try:
             messages.append(check_ons(secret, s3, event.get('ons-notweet', False)))
         except:
-            logging.exception('Caught exception accessing DOH daily data')
+            logging.exception('Caught exception accessing ONS CIS data')
+        try:
+            messages.append(check_cog(secret, s3, event.get('variants-notweet', False)))
+        except:
+            logging.exception('Caught exception accessing COG variants data')
 
     return {
         "statusCode": 200,
