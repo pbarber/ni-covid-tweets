@@ -1,10 +1,10 @@
 {
-    "url": "https://cog-uk-microreact.s3.climb.ac.uk/2021-08-24/cog_metadata_microreact_uk_geocoded.csv",
-    "modified": "2021-08-27T12:08:08",
-    "length": 72307276,
-    "filedate": "2021-08-24",
-    "lineage": "COG-variants/2021-08-24/2021-08-27T12_08_08-72307276_lineage.csv",
-    "keyname": "COG-variants/2021-08-24/2021-08-27T12_08_08-72307276.csv",
-    "notweet": false,
+    "url": "https://cog-uk.s3.climb.ac.uk/phylogenetics/2022-09-24/cog_metadata.csv.gz",
+    "modified": "2022-09-25T00:47:56",
+    "length": 145105996,
+    "filedate": "2022-09-24",
+    "lineage": "COG-variants/2022-09-24/2022-09-25T00_47_56-145105996.csv_lineage.csv",
+    "keyname": "COG-variants/2022-09-24/2022-09-25T00_47_56-145105996.csv.gz",
+    "notweet": true,
     "testtweet": true
 }
