@@ -165,7 +165,7 @@ def get_ni_headline_data(driver, s3, bucketname, last_updated, s3_dir, store):
         ]
     df = pandas.DataFrame({'Dose': headers[1:], 'Total': items[1:len(headers)]})
     df['Total'] = df['Total'].str.replace(',','').str.extract(r'\s(\d+)').astype(int)
-    df['Dose'] = df['Dose'].str.replace('\n',' ').str.extract(r'(Dose 1|Dose 2|Dose 3|Spring Booster|Booster)')
+    df['Dose'] = df['Dose'].str.replace('\n',' ').str.extract(r'(Dose 1|Dose 2|Dose 3|Autumn Booster|Booster)')
     keyname = '%s/doses.csv' % s3_dir
     datastore = update_datastore(s3, bucketname, keyname, last_updated, df, store)
     return datastore
@@ -558,9 +558,9 @@ def make_headline_tweets(df, source, last_updated):
     previous = previous[previous['Date']==previous['Date'].max()]
     total_reg = int(
         latest['Total'].sum() -
-        latest[latest['Dose']=='Spring Booster']['Total'].sum() -
+        latest[latest['Dose']=='Autumn Booster']['Total'].sum() -
         previous['Total'].sum() +
-        previous[previous['Dose']=='Spring Booster']['Total'].sum()
+        previous[previous['Dose']=='Autumn Booster']['Total'].sum()
     )
     if total_reg <= 0:
         return None
@@ -568,20 +568,20 @@ def make_headline_tweets(df, source, last_updated):
     second_reg = int(latest[latest['Dose']=='Dose 2']['Total'].sum() - previous[previous['Dose']=='Dose 2']['Total'].sum())
     third_reg = int(latest[latest['Dose']=='Dose 3']['Total'].sum() - previous[previous['Dose']=='Dose 3']['Total'].sum())
     booster_reg = int(latest[latest['Dose']=='Booster']['Total'].sum() - previous[previous['Dose']=='Booster']['Total'].sum())
-    sbooster_reg = int(latest[latest['Dose']=='Spring Booster']['Total'].sum() - previous[previous['Dose']=='Spring Booster']['Total'].sum())
+    sbooster_reg = int(latest[latest['Dose']=='Autumn Booster']['Total'].sum() - previous[previous['Dose']=='Autumn Booster']['Total'].sum())
     tweets = []
     tweets.append('''{doses_24:,} COVID-19 vaccinations reported in NI today
 \u2022 {f_24:,} first
 \u2022 {s_24:,} second
 \u2022 {t_24:,} third
-\u2022 {b_24:,} booster ({sb_24:,} spring)
+\u2022 {b_24:,} booster ({sb_24:,} autumn)
 \u2022 {pct_f}/{pct_s}/{pct_t}/{pct_b}% dose mix
 
 {total:,} in total
 \u2022 {total_f:,} first
 \u2022 {total_s:,} second
 \u2022 {total_t:,} third
-\u2022 {total_b:,} booster ({total_sb:,} spring)
+\u2022 {total_b:,} booster ({total_sb:,} autumn)
 
 {source}'''.format(
         doses_24=total_reg,
@@ -590,12 +590,12 @@ def make_headline_tweets(df, source, last_updated):
         t_24=third_reg,
         b_24=booster_reg,
         sb_24=sbooster_reg,
-        total=int(latest['Total'].sum() - latest[latest['Dose']=='Spring Booster']['Total'].sum()),
+        total=int(latest['Total'].sum() - latest[latest['Dose']=='Autumn Booster']['Total'].sum()), # Exclude Autumn boosters to prevent double counting
         total_f=int(latest[latest['Dose']=='Dose 1']['Total'].sum()),
         total_s=int(latest[latest['Dose']=='Dose 2']['Total'].sum()),
         total_t=int(latest[latest['Dose']=='Dose 3']['Total'].sum()),
         total_b=int(latest[latest['Dose']=='Booster']['Total'].sum()),
-        total_sb=int(latest[latest['Dose']=='Spring Booster']['Total'].sum()),
+        total_sb=int(latest[latest['Dose']=='Autumn Booster']['Total'].sum()),
         pct_f=int(first_reg/total_reg * 100),
         pct_s=int(second_reg/total_reg * 100),
         pct_t=int(third_reg/total_reg * 100),
@@ -606,7 +606,7 @@ def make_headline_tweets(df, source, last_updated):
 
     blocks = ['','','','']
     for i in range(20):
-        if (i*5)+5 <= (100 * (latest[latest['Dose']=='Dose 3']['Total'].sum()+latest[latest['Dose']=='Booster']['Total'].sum()-latest[latest['Dose']=='Spring Booster']['Total'].sum()) / 1597898):
+        if (i*5)+5 <= (100 * (latest[latest['Dose']=='Dose 3']['Total'].sum()+latest[latest['Dose']=='Booster']['Total'].sum()-latest[latest['Dose']=='Autumn Booster']['Total'].sum() - 135636) / 1597898):
             blocks[i//5] += arrow_block
         elif (i*5)+5 <= (100 * latest[latest['Dose']=='Dose 2']['Total'].sum() / 1597898):
             blocks[i//5] += green_block
@@ -618,7 +618,7 @@ def make_headline_tweets(df, source, last_updated):
 
 \u2022 {pop_f:.1%} first
 \u2022 {pop_s:.1%} second
-\u2022 {pop_b:.1%} third/booster (excluding spring)
+\u2022 {pop_b:.1%} third/first booster
 
 {blocks0}
 {blocks1}
@@ -633,7 +633,10 @@ One block is one person in 20
 {black} - no doses'''.format(
         pop_f=latest[latest['Dose']=='Dose 1']['Total'].sum() / 1597898,
         pop_s=latest[latest['Dose']=='Dose 2']['Total'].sum() / 1597898,
-        pop_b=(latest[latest['Dose']=='Dose 3']['Total'].sum()+latest[latest['Dose']=='Booster']['Total'].sum()-latest[latest['Dose']=='Spring Booster']['Total'].sum()) / 1597898,
+        pop_b=(latest[latest['Dose']=='Dose 3']['Total'].sum()+
+                latest[latest['Dose']=='Booster']['Total'].sum()-
+                latest[latest['Dose']=='Autumn Booster']['Total'].sum()-
+                135636) / 1597898,
         blocks0=blocks[0],
         blocks1=blocks[1],
         blocks2=blocks[2],
