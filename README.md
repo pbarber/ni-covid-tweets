@@ -3,49 +3,33 @@
 This repository holds the source code for [an unofficial Twitter bot](https://twitter.com/ni_covid19_data) which summarises and posts data about COVID-19 in Northern Ireland (NI). The bot posts:
 
 * daily updates on [vaccinations](#vaccinations)
-* daily updates on [tests and cases](#tests-and-cases)
-* weekly updates on [R number](#r-number) estimates
+* weekly updates on [hospital admissions](#hospital-admissions)
 * weekly updates on NISRA [deaths](#deaths) statistics
-* weekly updates on [clusters and outbreaks](#clusters-and-outbreaks)
 * ad-hoc updates of COG-UK [variant counts](#variants)
+* weekly updates on [ONS COVID-19 Infection Survey](#ons-cis)
 * occasional interesting charts
 
 ## Vaccinations
 
-Vaccinations data is taken from either [HSCNI](https://covid-19.hscni.net/) or [PHE](https://coronavirus.data.gov.uk/), whichever posts first (generally HSCNI but both processes seem to be manual so there is some variability).
+Vaccinations data is taken from the NI COVID-19 vaccinations Power BI dashboard. It is checked once daily at 12:35 and data is taken from the front page on total vaccinations by dose/campaign.
 
-HSCNI data is scraped from the front page of the website, PHE data is taken from the [API](https://coronavirus.data.gov.uk/details/download). PHE API fields used are:
+## Hospital admissions
 
-* cumPeopleVaccinatedFirstDoseByPublishDate
-* cumPeopleVaccinatedSecondDoseByPublishDate
-* cumVaccinationFirstDoseUptakeByPublishDatePercentage
-* cumVaccinationSecondDoseUptakeByPublishDatePercentage
-
-## Tests and cases
-
-Tests and cases (aka positive tests) data is taken from the daily Excel [downloads](https://www.health-ni.gov.uk/articles/covid-19-daily-dashboard-updates) of the NI Department of Health (DoH) dashboard. The information presented is taken from the `Summary Tests`, `Deaths`, `Admissions` and `Discharges` tabs.
+Hospital admissions data is taken from the weekly Excel [downloads](https://www.health-ni.gov.uk/articles/covid-19-daily-dashboard-updates) of the NI Department of Health (DoH) dashboard. The information presented is taken from the `Summary Tests`, `Deaths`, `Admissions` and `Discharges` tabs.
 
 The bot runs an exponential curve fitting model, using a 9-day window over the 7-day case average, to calculate the current growth rate of cases.
-
-Note that the DoH daily data is, in my opinion, somewhat flawed. The dashboard and download provide a count `All Individuals Tested` for each day, this is not all individuals tested on that day, but the total of individuals who were last tested on that day. So, if I have been tested twice, once in September 2020 and once in March 2021, then I was counted in the September figures up until March, when my count was moved to the March numbers.
-
-In addition, the daily tests reported can be considered incomplete for a number of days after the initial report. As in many parts of the world, NI data on negative tests moves slower than data on positive tests. There's a [blog post](https://codeandnumbers.co.uk/data-dynamics-and-covid-19/) on this topic.
-
-## R number
-
-The DoH publishes [R number estimates](https://www.health-ni.gov.uk/R-Number) once a week. The headlines of this report relative to R estimates are presented as is.
 
 ## Deaths
 
 NISRA publishes [weekly deaths statistics](https://www.nisra.gov.uk/publications/weekly-death-statistics-northern-ireland-2021) when the number of deaths registered in a week is five or more.
 
-## Clusters and outbreaks
-
-NI's Public Health Agency (PHA) has published [weekly updates on clusters and probably outbreaks](https://www.publichealth.hscni.net/publications/covid-19-clusteroutbreak-summary) since early 2021. The data is published weekly but covers the preceding four weeks. The charts show the totals for each category (clusters/outbreaks). It would be preferable to show the number of new clusters/outbreaks on a weekly basis but it has not been possible to accurately calculate this from the reports.
-
 ## Variants
 
 Variant data is pulled from [Microreact](https://beta.microreact.org/) as new files are published to its AWS S3 website.
+
+## ONS CIS
+
+
 
 ## Architecture
 
