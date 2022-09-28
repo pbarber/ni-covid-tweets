@@ -11,11 +11,11 @@ This repository holds the source code for [an unofficial Twitter bot](https://tw
 
 ## Vaccinations
 
-Vaccinations data is taken from the NI COVID-19 vaccinations Power BI dashboard. It is checked once daily at 12:35 and data is taken from the front page on total vaccinations by dose/campaign.
+Vaccinations data is taken from the [NI COVID-19 vaccinations Power BI dashboard](https://covid-19.hscni.net/ni-covid-19-vaccinations-dashboard/). It is checked once daily at 12:35 and data is taken from the front page on total vaccinations by dose/campaign.
 
 ## Hospital admissions
 
-Hospital admissions data is taken from the weekly Excel [downloads](https://www.health-ni.gov.uk/articles/covid-19-daily-dashboard-updates) of the NI Department of Health (DoH) dashboard. The information presented is taken from the `Summary Tests`, `Deaths`, `Admissions` and `Discharges` tabs.
+Hospital admissions data is taken from the weekly Excel [downloads](https://www.health-ni.gov.uk/publications/covid-19-hospitalisations-data) of the NI Department of Health (DoH) dashboard. The information presented is taken from the `Inpatients`, `Admissions` and `Discharges` tabs.
 
 The bot runs an exponential curve fitting model, using a 9-day window over the 7-day case average, to calculate the current growth rate of cases.
 
@@ -29,7 +29,7 @@ Variant data is pulled from [Microreact](https://beta.microreact.org/) as new fi
 
 ## ONS CIS
 
-
+ONS publishes the weekly [COVID-19 infection survey for NI](https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditionsanddiseases/datasets/covid19infectionsurveynorthernireland) which estimates the prevalence of COVID-19 cases.
 
 ## Architecture
 
