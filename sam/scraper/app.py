@@ -250,18 +250,33 @@ def check_symptoms():
 
 def check_for_nisra_files(s3client, bucket, previous):
     session = requests.Session()
-
+    session.headers = {
+        'Cache-Control': 'no-cache',
+        'Pragma': 'no-cache',
+        'Host': 'www.nisra.gov.uk',
+        'Connection': 'keep-alive',
+        'Sec-Fetch-Dest': 'document',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-Site': 'same-origin',
+        'Sec-Fetch-User': '?1',
+        'User-Agent': generate_user_agent(),
+        'Upgrade-Insecure-Requests': '1',
+        'Referer': 'https://www.nisra.gov.uk/statistics/ni-summary-statistics/coronavirus-covid-19-statistics',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-GB,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'TE': 'trailers'
+    }
+    url = 'https://www.nisra.gov.uk/statistics/death-statistics/weekly-death-registrations-northern-ireland'
+    resp = session.head(url)
+    resp.raise_for_status()
     # Attempt to pull the link to this week's publications
     url = 'https://www.nisra.gov.uk/statistics/death-statistics/weekly-death-registrations-northern-ireland'
+    resp = session.get(url)
+    resp.raise_for_status()
     html = BeautifulSoup(
-        get_url(
-            session,
-            url,
-            'text',
-            useragent=generate_user_agent(),
-            referer='https://www.nisra.gov.uk/statistics/ni-summary-statistics/coronavirus-covid-19-statistics'
-        )
-        ,features="html.parser")
+        resp.text,
+        features="html.parser")
     durl = None
     for a in html.find_all('a', href=True):
         if a.text.strip() == 'Latest Weekly Deaths':
@@ -274,6 +289,7 @@ def check_for_nisra_files(s3client, bucket, previous):
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly_Deaths%20-%20w%20e%2019th%20March%202021.XLSX
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly-Deaths-we-17-September-2021.XLSX
     # e.g. https://www.nisra.gov.uk/system/files/statistics/Weekly_Deaths%20-%20w%20e%205th%20November%202021.XLSX
+    print(durl)
     excels = extract_doh_file_list(
         get_url(
             session,

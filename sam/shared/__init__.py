@@ -39,7 +39,7 @@ def get_url(session, url, format, useragent=None, referer=None, upgradeinsecure=
     if upgradeinsecure is True:
         headers['Upgrade-Insecure-Requests'] = '1'
         headers['Accept'] = 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8'
-        headers['Accept-Language'] = 'en-US,en;q=0.5'
+        headers['Accept-Language'] = 'en-GB,en;q=0.5'
     resp = session.get(
         url,
         headers=headers
