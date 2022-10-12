@@ -570,7 +570,7 @@ def make_headline_tweets(df, source, last_updated):
     booster_reg = int(latest[latest['Dose']=='Booster']['Total'].sum() - previous[previous['Dose']=='Booster']['Total'].sum())
     sbooster_reg = int(latest[latest['Dose']=='Autumn Booster']['Total'].sum() - previous[previous['Dose']=='Autumn Booster']['Total'].sum())
     tweets = []
-    tweets.append('''{doses_24:,} COVID-19 vaccinations reported in NI today
+    tweets.append('''{doses_24:,} COVID-19 vaccinations reported today
 \u2022 {f_24:,} first
 \u2022 {s_24:,} second
 \u2022 {t_24:,} third
@@ -688,12 +688,8 @@ def lambda_handler(event, context):
                 if tweets is None:
                     raise Exception('No change in data')
                 ni_age_bands, ni_age_bands_reported = get_ni_age_band_data(driver, s3, secret['bucketname'], last_updated, s3dir, store_data)
-                if today.weekday() == 5: # Saturday - Vaccinations per person by postcode district
-                    driver.get(url)
-                    postcodes = get_ni_postcode_data(driver, s3, secret['bucketname'], last_updated, s3dir, store_data)
-                    plots = make_postcode_plots(driver, postcodes, plots, today, last_updated)
-                elif today.weekday() == 0: # Monday - NI/Eng age band comparison
-                    plots = make_age_band_plots(driver, ni_age_bands, plots, today)
+                if today.weekday() != 5: # Saturday - Uptake
+                    tweets = [tweets[0]]
             except:
                 logging.exception('Caught exception in scraping/plotting')
 
