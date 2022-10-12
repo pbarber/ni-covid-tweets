@@ -16,7 +16,7 @@ Resources:
     Properties:
       CodeUri: scraper/
       Handler: app.lambda_handler
-      Runtime: python3.8
+      Runtime: python3.9
       Timeout: 30
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
@@ -108,7 +108,7 @@ Resources:
     Properties:
       CodeUri: generic-tweeter/
       Handler: app.lambda_handler
-      Runtime: python3.8
+      Runtime: python3.9
       Timeout: 120
       Role: arn:aws:iam::018530147132:role/ni-covid-tweets
       EventInvokeConfig:
