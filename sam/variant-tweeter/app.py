@@ -121,11 +121,11 @@ def lambda_handler(event, context):
             lineage['diff'] = (lineage['count_x'] - lineage['count_y']).fillna(0).astype(int)
             if lineage['diff'].max() > 0 or event.get('tweetifnochange', False) is True:
                 top5 = lineage.nlargest(5, 'diff')
-                tweet = """{total:,d} new variant analyses reported for NI on {currdate} since {prevdate} ({altogether:,d} total):
+                tweet = """{total:,d} new variant analyses reported since {prevdate} ({altogether:,d} total):
 """.format(
                     total=lineage['diff'].sum(),
-                    prevdate=datetime.datetime.strptime(previous, '%Y-%m-%d').date().strftime('%A %-d %B %Y'),
-                    currdate=datetime.datetime.strptime(event['filedate'], '%Y-%m-%d').date().strftime('%A %-d %B %Y'),
+                    prevdate=datetime.datetime.strptime(previous, '%Y-%m-%d').date().strftime('%-d %B %Y'),
+                    currdate=datetime.datetime.strptime(event['filedate'], '%Y-%m-%d').date().strftime('%-d %B %Y'),
                     altogether=lineage['count_x'].sum()
                 )
                 for variant,data in top5.to_dict('index').items():
@@ -201,7 +201,7 @@ def lambda_handler(event, context):
     except:
         logging.exception('Caught exception in COG variants tweeter')
         api = TwitterAPI(secret['twitter_apikey'], secret['twitter_apisecretkey'], secret['twitter_accesstoken'], secret['twitter_accesstokensecret'])
-        api.dm(secret['twitter_dmaccount'], 'Error in hospitals tweeter')
+        api.dm(secret['twitter_dmaccount'], 'Error in variant tweeter')
 
     return {
         "statusCode": 200,
