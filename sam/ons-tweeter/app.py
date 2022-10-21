@@ -36,13 +36,13 @@ def lambda_handler(event, context):
             for header in range(3, 10):
                 df = pandas.read_excel(stream,engine='openpyxl',sheet_name='1a', header=header)
                 df.dropna('columns',how='all',inplace=True)
-                if '95% Lower confidence/credible interval' in df.columns:
+                if '95% Lower confidence/credible interval for percentage' in df.columns:
                     break
             else:
                 print('Expected column not found')
-            df.dropna('rows',subset=['95% Lower confidence/credible interval'],inplace=True)
-            df['95% Lower confidence/credible interval'] = df['95% Lower confidence/credible interval']/100
-            df['95% Upper confidence/credible interval'] = df['95% Upper confidence/credible interval']/100
+            df.dropna('rows',subset=['95% Lower confidence/credible interval for percentage'],inplace=True)
+            df['95% Lower confidence/credible interval'] = df['95% Lower confidence/credible interval for percentage']/100
+            df['95% Upper confidence/credible interval'] = df['95% Upper confidence/credible interval for percentage']/100
             df['Start Date'] = df['Time period'].str.extract(r'(.+) to ')
             df['End Date'] = df['Time period'].str.extract(r'.+ to (.+)')
             df['Week Beginning'] = pandas.to_datetime(df['Start Date'], format='%d %B %Y')
@@ -53,17 +53,17 @@ def lambda_handler(event, context):
             for header in range(3, 10):
                 df2 = pandas.read_excel(stream,engine='openpyxl',sheet_name='1b', header=header)
                 df2.dropna('columns',how='all',inplace=True)
-                if '95% Lower credible interval' in df2.columns:
+                if '95% Lower credible interval for percentage' in df2.columns:
                     break
             else:
                 print('Expected column not found')
-            df2.dropna('rows',subset=['95% Lower credible interval'],inplace=True)
+            df2.dropna('rows',subset=['95% Lower credible interval for percentage'],inplace=True)
             df2['Date'] = pandas.to_datetime(df2['Date'], format='%d %B %Y')
-            df2['95% Lower credible interval'] = df2['95% Lower credible interval']/100
-            df2['95% Upper credible interval'] = df2['95% Upper credible interval']/100
+            df2['95% Lower credible interval'] = df2['95% Lower credible interval for percentage']/100
+            df2['95% Upper credible interval'] = df2['95% Upper credible interval for percentage']/100
 
             for header in range(3, 10):
-                age = pandas.read_excel(stream,engine='openpyxl',sheet_name='1d', header=[header,header+1])
+                age = pandas.read_excel(stream,engine='openpyxl',sheet_name='1e', header=[header,header+1])
                 age.dropna('columns',how='all',inplace=True)
                 if ('Age 2', 'Modelled % testing positive for COVID-19') in age.columns:
                     age.dropna('rows', subset=[('Age 2', 'Modelled % testing positive for COVID-19')], inplace=True)
@@ -92,13 +92,13 @@ Previous week was between {plower} ({plower_pct:.1%}) and {pupper} ({pupper_pct:
 
 https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditionsanddiseases/datasets/covid19infectionsurveynorthernireland'''.format(
                 period=latest['End Date'],
-                lower=latest['95% Lower confidence/credible interval.2'],
+                lower=latest['95% Lower confidence/credible interval for ratio'],
                 lower_pct=latest['95% Lower confidence/credible interval'],
-                upper=latest['95% Upper confidence/credible interval.2'],
+                upper=latest['95% Upper confidence/credible interval for ratio'],
                 upper_pct=latest['95% Upper confidence/credible interval'],
-                plower=prev['95% Lower confidence/credible interval.2'],
+                plower=prev['95% Lower confidence/credible interval for ratio'],
                 plower_pct=prev['95% Lower confidence/credible interval'],
-                pupper=prev['95% Upper confidence/credible interval.2'],
+                pupper=prev['95% Upper confidence/credible interval for ratio'],
                 pupper_pct=prev['95% Upper confidence/credible interval'])
             tweets.append(tweet)
             try:
