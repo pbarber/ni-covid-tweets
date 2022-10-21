@@ -63,13 +63,23 @@ def load_ni_time_series(url, sheet_name, date_col, series_col, model=False, filt
     df = pandas.read_excel(url, engine='openpyxl', sheet_name=sheet_name)
     if filter_col is not None:
         df = df[df[filter_col] == filter]
+    # Clean up mix of numeric values in date column
+    mask = pandas.to_numeric(df[date_col], errors='coerce').notna()
+    if (mask.sum() > 0) and (mask.sum() < len(df)):
+        logging.error('{num} numeric values found in date column'.format(num=mask.sum()))
+        df['datenums'] = pandas.to_numeric(df[date_col], errors='coerce')
+        df['datenumvals'] = pandas.to_datetime(df['datenums'], unit='D', origin='1899-12-30', errors='coerce').dt.strftime('%Y-%m-%d %H:%M:%S').values
+        df.loc[mask, date_col] = df['datenumvals']
+        df.drop(columns=['datenums','datenumvals'], inplace=True)
+        df.reset_index(inplace=True)
     df = df.groupby(date_col)[series_col].sum().reset_index()
     df.set_index(date_col, inplace=True)
-    newind = pandas.date_range(start=df.index.min(), end=df.index.max())
-    df = df.reindex(newind)
+    newind = pandas.DataFrame(index=pandas.date_range(start=df.index.min(), end=df.index.max()))
+    df = newind.join(df, how='left')
     df.index.name = date_col
     df.reset_index(inplace=True)
     df.fillna(0, inplace=True)
+    df = df.groupby(date_col)[series_col].sum().reset_index()
     df['%s 7-day rolling mean' %series_col] = df[series_col].rolling(7, center=True).mean()
     if model is True:
         df = create_model(df, '%s 7-day rolling mean' %series_col, date_col)
