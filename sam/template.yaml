@@ -66,7 +66,7 @@ Resources:
         InvocationLevel:
           Type: Schedule
           Properties:
-            Schedule: cron(35 11 * * ? *)
+            Schedule: cron(35 12 * * ? *)
     Metadata:
       DockerTag: tweeter-tag
       DockerContext: ./
