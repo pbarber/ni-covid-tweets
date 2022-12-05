@@ -143,10 +143,23 @@ def lambda_handler(event, context):
             stream = io.BytesIO(obj.read())
 
             # Summary stats to allow 'X registered in last 24 hours' info
-            admissions = load_ni_time_series(stream,'Admissions','Admission Date','Number of Admissions',True)
-            discharges = load_ni_time_series(stream,'Discharges','Discharge Date','Number of Discharges')
-            inpatients = load_ni_time_series(stream,'Inpatients','Inpatients at Midnight','Number of Confirmed COVID Inpatients',False,'Sex','All')
-            inpatients.rename(columns={'Inpatients at Midnight': 'Date'}, inplace=True)
+            admissions = load_ni_time_series(stream,'Admissions','admit_da','n',True)
+            admissions.rename(columns={
+                'admit_da': 'Admission Date', 
+                'n': 'Number of Admissions',
+                'n 7-day rolling mean model_daily_change': 'Number of Admissions 7-day rolling mean model_daily_change',
+                'n 7-day rolling mean model_weekly_change': 'Number of Admissions 7-day rolling mean model_weekly_change',
+                'n 7-day rolling mean model0': 'Number of Admissions 7-day rolling mean model0',
+                'n 7-day rolling mean': 'Number of Admissions 7-day rolling mean',
+                }, inplace=True)
+            discharges = load_ni_time_series(stream,'Discharges','dis_date','n')
+            discharges.rename(columns={
+                'dis_date': 'Discharge Date', 
+                'n': 'Number of Discharges',
+                'n 7-day rolling mean': 'Number of Discharges 7-day rolling mean',
+                }, inplace=True)
+            inpatients = load_ni_time_series(stream,'Inpatients','date','Occupancy',False,'sex','All')
+            inpatients.rename(columns={'date': 'Date', 'Occupancy': 'Number of Confirmed COVID Inpatients'}, inplace=True)
             totals = {
                 'admissions': int(admissions['Number of Admissions'].sum()),
                 'discharges': int(discharges['Number of Discharges'].sum())
