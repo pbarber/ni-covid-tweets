@@ -143,23 +143,17 @@ def lambda_handler(event, context):
             stream = io.BytesIO(obj.read())
 
             # Summary stats to allow 'X registered in last 24 hours' info
-            admissions = load_ni_time_series(stream,'Admissions','admit_da','n',True)
+            admissions = load_ni_time_series(stream,'Admissions','Admission Day','Number of Admissions',True)
             admissions.rename(columns={
-                'admit_da': 'Admission Date', 
-                'n': 'Number of Admissions',
-                'n 7-day rolling mean model_daily_change': 'Number of Admissions 7-day rolling mean model_daily_change',
-                'n 7-day rolling mean model_weekly_change': 'Number of Admissions 7-day rolling mean model_weekly_change',
-                'n 7-day rolling mean model0': 'Number of Admissions 7-day rolling mean model0',
-                'n 7-day rolling mean': 'Number of Admissions 7-day rolling mean',
+                'Admission Day': 'Admission Date',
                 }, inplace=True)
-            discharges = load_ni_time_series(stream,'Discharges','dis_date','n')
+            discharges = load_ni_time_series(stream,'Discharges','Discharge Date','Number of Admissions')
             discharges.rename(columns={
-                'dis_date': 'Discharge Date', 
-                'n': 'Number of Discharges',
-                'n 7-day rolling mean': 'Number of Discharges 7-day rolling mean',
+                'Number of Admissions': 'Number of Discharges',
+                'Number of Admissions 7-day rolling mean': 'Number of Discharges 7-day rolling mean',
                 }, inplace=True)
-            inpatients = load_ni_time_series(stream,'Inpatients','date','Occupancy',False,'sex','All')
-            inpatients.rename(columns={'date': 'Date', 'Occupancy': 'Number of Confirmed COVID Inpatients'}, inplace=True)
+            inpatients = load_ni_time_series(stream,'Inpatients','Admission Day','Occupancy',False,'Sex','All')
+            inpatients.rename(columns={'Admission Day': 'Date', 'Occupancy': 'Number of Confirmed COVID Inpatients'}, inplace=True)
             totals = {
                 'admissions': int(admissions['Number of Admissions'].sum()),
                 'discharges': int(discharges['Number of Discharges'].sum())
