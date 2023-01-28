@@ -45,8 +45,6 @@ def get_url(session, url, format, useragent=None, referer=None, upgradeinsecure=
         headers=headers
     )
     resp.raise_for_status()
-    if upgradeinsecure is True:
-        print(resp.request.headers)
     if format=='text':
         return(resp.text)
     elif format=='content':
