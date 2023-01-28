@@ -146,7 +146,7 @@ def lambda_handler(event, context):
                     ).mark_line().encode(
                         x = altair.X('Week of sample:T', axis=altair.Axis(title='', labels=False, ticks=False)),
                         y = altair.Y('count:Q', axis=altair.Axis(title='Samples')),
-                        color='WHO label'
+                        color=altair.Color('WHO label', title=''),
                     ).properties(
                         height=225,
                         width=800,
@@ -157,7 +157,7 @@ def lambda_handler(event, context):
                     ).mark_area().encode(
                         x = 'Week of sample:T',
                         y = altair.Y('sum(count):Q', axis=altair.Axis(format='%', title='% of samples', orient="right")),
-                        color='WHO label'
+                        color=altair.Color('WHO label', title=''),
                     ).properties(
                         height=225,
                         width=800,
