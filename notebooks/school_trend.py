@@ -63,7 +63,7 @@ case_band_mapping = pandas.DataFrame({
     })
 
 # %%
-admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-260122.xlsx', sheet_name='Admissions')
+admissions = pandas.read_excel('https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-dd-010222.xlsx', sheet_name='Admissions')
 admissions = admissions.groupby(['Admission Date', 'Age Band'])['Number of Admissions'].sum().reset_index()
 admissions['Admission Date'] = pandas.to_datetime(admissions['Admission Date'])
 admissions = load_grouped_time_series(admissions, 'Admission Date', 'Age Band', 'Number of Admissions', 'Admissions', False)
@@ -219,10 +219,22 @@ plt.save('ni-age-band-cases-%s.png'%(datetime.datetime.now().date().strftime('%Y
 plt
 
 # %%
-def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, latest_y, title, subtitle, y_scale='linear'):
+def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, latest_y, title, subtitle, y_scale='linear', colour_domain = None, colour_range = None):
     if y_scale == 'log':
         y_title += ' (log scale)'
         title += ' (log scale)'
+
+    if colour_domain is None:
+        color_settings = altair.Color(
+            color,
+            legend=None
+        )
+    else:
+        color_settings = altair.Color(
+            color,
+            scale=altair.Scale(domain=colour_domain, range=colour_range),
+            legend=None
+        )
 
     trend = altair.Chart(df).mark_line().encode(
         x = x,
@@ -233,10 +245,7 @@ def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, lates
             axis=altair.Axis(title=y_title, format=y_format),
             scale=altair.Scale(type=y_scale),
         ),
-        color = altair.Color(
-            color,
-            legend=None
-        ),
+        color = color_settings,
     )
 
     text = altair.Chart(latest).mark_text(
@@ -251,10 +260,7 @@ def plot_timelines_with_latest(df, x, y, color, y_title, y_format, latest, lates
             aggregate='sum',
             scale=altair.Scale(type=y_scale),
         ),
-        color = altair.Color(
-            color,
-            legend=None
-        ),
+        color = color_settings,
         text = altair.Text(color)
     )
 
@@ -361,9 +367,9 @@ cases_10yr['Cumulative Positive per 100k'] = cases_10yr.groupby('10 Year Group')
 overlay_10yr = cases_10yr[cases_10yr['Date'] == cases_10yr['Date'].max()]
 overlay_10yr['Nearest'] = overlay_10yr['Positive per 100k']
 overlay_10yr = overlay_10yr[overlay_10yr['Nearest'] < 100000]
-#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '30 - 39', 'Nearest'] = 2650
-#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '15 - 19', 'Nearest'] = 2500
-#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '5 - 9', 'Nearest'] = 890
+#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '30 - 39', 'Nearest'] = 2200
+#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '15 - 19', 'Nearest'] = 1800
+#overlay_10yr.loc[overlay_10yr['10 Year Group'] == '50 - 59', 'Nearest'] = 750
 
 for scale in ['linear','log']:
     plt = plot_timelines_with_latest(
