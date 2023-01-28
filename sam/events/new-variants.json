@@ -1,9 +1,11 @@
-[
     {
-        "url": "https://www.gov.uk/government/publications/covid-19-variants-genomically-confirmed-case-numbers/variants-distribution-of-case-data-17-june-2022",
-        "filedate": "2022-06-17",
-        "keyname": "UKHSA-variants/2022-06-17/1-1.html",
-        "notweet": true,
-        "testtweet": false
+        "url": "https://cog-uk.s3.climb.ac.uk/phylogenetics/2022-11-12/cog_metadata.csv.gz",
+        "modified": "2022-11-13T02:41:17",
+        "length": 150538165,
+        "filedate": "2022-11-12",
+        "lineage": "COG-variants/2022-11-12/2022-11-13T02_41_17-150538165.csv_lineage.csv",
+        "keyname": "COG-variants/2022-11-12/2022-11-13T02_41_17-150538165.csv.gz",
+        "tweet": 1591624213101613056,
+        "notweet": false,
+        "testtweet": true
     }
-]

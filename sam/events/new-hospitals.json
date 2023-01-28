@@ -1,11 +1,11 @@
 [
     {
-        "url": "https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-hosp-dashboard-211022-daily.xlsx",
-        "modified": "2022-10-21T13:12:08",
-        "length": 4497148,
-        "filedate": "2022-10-21",
-        "keyname": "DoH-hospitalisations/2022-10-21/2022-10-21T13_12_08-4497148.xlsx",
-        "notweet": true,
-        "testtweet": true
+        "url": "https://www.health-ni.gov.uk/sites/default/files/publications/health/doh-hops-dashboard-091222-daily.xlsx",
+        "modified": "2022-12-09T14:14:27",
+        "length": 4708880,
+        "filedate": "2022-12-09",
+        "keyname": "DoH-hospitalisations/2022-12-09/2022-12-09T14_14_27-4708880.xlsx",
+        "notweet": false,
+        "testtweet": false
     }
 ]

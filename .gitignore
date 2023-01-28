@@ -3,3 +3,4 @@ new_user_credentials.csv
 notebooks/*.png
 data/*.csv
 data/**/*.xlsx
+.DS_Store
