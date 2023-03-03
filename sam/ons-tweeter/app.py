@@ -34,7 +34,7 @@ def lambda_handler(event, context):
 
             # Load test data and add extra fields
             for header in range(3, 10):
-                df = pandas.read_excel(stream,engine='openpyxl',sheet_name='1a', header=header)
+                df = pandas.read_excel(stream,engine='openpyxl',sheet_name='1h', header=header)
                 df.dropna('columns',how='all',inplace=True)
                 if '95% Lower confidence/credible interval for percentage' in df.columns:
                     break
@@ -51,7 +51,7 @@ def lambda_handler(event, context):
             prev = df.iloc[-2]
 
             for header in range(3, 10):
-                df2 = pandas.read_excel(stream,engine='openpyxl',sheet_name='1b', header=header)
+                df2 = pandas.read_excel(stream,engine='openpyxl',sheet_name='1i', header=header)
                 df2.dropna('columns',how='all',inplace=True)
                 if '95% Lower credible interval for percentage' in df2.columns:
                     break
@@ -62,29 +62,7 @@ def lambda_handler(event, context):
             df2['95% Lower credible interval'] = df2['95% Lower credible interval for percentage']/100
             df2['95% Upper credible interval'] = df2['95% Upper credible interval for percentage']/100
 
-            try:
-                for header in range(3, 10):
-                    age = pandas.read_excel(stream,engine='openpyxl',sheet_name='1e', header=[header,header+1])
-                    age.dropna('columns',how='all',inplace=True)
-                    if ('Age 2', 'Modelled % testing positive for COVID-19') in age.columns:
-                        age.dropna('rows', subset=[('Age 2', 'Modelled % testing positive for COVID-19')], inplace=True)
-                        age = age.set_index(('Date', 'Unnamed: 0_level_1')).stack(level=0).reset_index(level=1)
-                        age.index.names = ['Date']
-                        age.rename({'level_1': 'Age'}, axis='columns', inplace=True)
-                        age.reset_index(inplace=True)
-                        age['Date'] = age['Date'].dt.strftime('%Y-%m-%d').str.slice(stop=10)
-                        age['Age order'] = age['Age'].str.extract(r'Age (\d+)').astype(int)
-                        age['Age'] = age['Age'].str.extract(r'Age (.+)')
-                        age['Modelled % testing positive for COVID-19'] = pandas.to_numeric(age['Modelled % testing positive for COVID-19'], errors='coerce')
-                        age['95% Lower confidence interval'] = pandas.to_numeric(age['95% Lower confidence interval'], errors='coerce')/100
-                        age['95% Upper confidence interval'] = pandas.to_numeric(age['95% Upper confidence interval'], errors='coerce')/100
-                        break
-                else:
-                    print('Expected column not found')
-                    age = None
-            except:
-                logging.exception('Unable to load age data')
-                age = None
+            age = None
 
             tweets = []
             plots = []

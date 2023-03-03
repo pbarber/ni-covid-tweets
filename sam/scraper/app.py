@@ -341,7 +341,7 @@ def check_for_ons_files(s3client, bucket, previous):
     session = requests.Session()
 
     # Attempt to pull the link to this week's publications
-    url = 'https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditionsanddiseases/datasets/covid19infectionsurveynorthernireland'
+    url = 'https://www.ons.gov.uk/peoplepopulationandcommunity/healthandsocialcare/conditionsanddiseases/datasets/coronaviruscovid19infectionsurveyheadlineresultsuk'
     html = BeautifulSoup(
         get_url(
             session,
@@ -362,7 +362,7 @@ def check_for_ons_files(s3client, bucket, previous):
     # Example: https://www.ons.gov.uk/file?uri=/peoplepopulationandcommunity/healthandsocialcare/conditionsanddiseases/datasets/covid19infectionsurveynorthernireland/2022/20220617covid19infectionsurveydatasetsni1.xlsx
     # Example: https://www.ons.gov.uk/file?uri=%2fpeoplepopulationandcommunity%2fhealthandsocialcare%2fconditionsanddiseases%2fdatasets%2fcovid19infectionsurveynorthernireland%2f2022/20220520covid19infectionsurveydatasetsni.xlsx
     # Example: https://www.ons.gov.uk/file?uri=%2fpeoplepopulationandcommunity%2fhealthandsocialcare%2fconditionsanddiseases%2fdatasets%2fcovid19infectionsurveynorthernireland%2f2021/20220107covid19infectionsurveydatasetsni.xlsx
-    regex = re.compile(r'(\d{8})covid19infectionsurveydatasetsni\d*\.(?:xlsx|XLSX)$', flags=re.IGNORECASE)
+    regex = re.compile(r'(\d{8})covidinfectionsurveyheadlinedataset\d*\.(?:xlsx|XLSX)$', flags=re.IGNORECASE)
     m = regex.search(durl)
     if m is None:
         raise Exception('Failed to find ONS infection survey date in %s' %durl)
